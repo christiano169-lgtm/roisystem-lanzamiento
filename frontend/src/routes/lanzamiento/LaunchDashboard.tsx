@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { apiGet } from '../../lib/api';
 import { formatCurrency, formatDate, formatMinutes, formatNumber } from '../../lib/format';
+import NoLocationState from '../../components/NoLocationState';
 import type { OutletContext } from '../AppLayout';
 
 interface Launch {
@@ -66,6 +67,7 @@ export default function LaunchDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     apiGet<{ launches: Launch[] }>(`/api/launches?locationId=${locationId}`).then((res) => {
       if (cancelled) return;
@@ -100,6 +102,8 @@ export default function LaunchDashboard() {
       cancelled = true;
     };
   }, [launchId, locationId]);
+
+  if (!locationId) return <NoLocationState />;
 
   if (launches && launches.length === 0) {
     return (

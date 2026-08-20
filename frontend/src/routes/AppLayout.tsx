@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
-import { apiGet, apiPost, ApiError } from '../lib/api';
+import { apiGet, apiPost } from '../lib/api';
 import { IconPanel, IconChart, IconInbox, IconGear, IconLogout, IconUser, IconDocs, IconTray } from '../components/icons';
 import AssistantChat from '../components/AssistantChat';
 import WeeklyReportButton from '../components/WeeklyReportButton';
@@ -15,14 +15,22 @@ export interface Location {
   lastSyncedAt: string | null;
 }
 
+// locationId is '' when no subcuenta is connected/selected yet — every page
+// under /app renders regardless (Configuración → Conexión GHL is where you
+// fix that), so each page's own data-fetching guards against an empty id
+// the same way it already handles "no data yet".
 export interface OutletContext {
   locationId: string;
+  locations: Location[];
+  refreshLocations: () => Promise<void>;
 }
 
 const SELECTED_LOCATION_KEY = 'roisystem_selected_location';
 const THEME_KEY = 'roisystem_theme';
 
-const NAV = [
+// Exported so Configuración → Equipo can offer the exact same list of pages
+// as checkboxes when restricting an asesor's access (see User.allowedPages).
+export const NAV = [
   { to: '/app', label: 'Panel ejecutivo', icon: IconPanel, end: true },
   { to: '/app/lanzamiento', label: 'Lanzamiento', icon: IconChart },
   { to: '/app/overview', label: 'Resumen', icon: IconChart },
@@ -63,83 +71,6 @@ function initialsFor(name: string) {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '??';
 }
 
-/** Fase 6: pastes a GHL Private Integration Token instead of an OAuth redirect — see README "Conexión con GHL". */
-function ConnectLocationForm({ onConnected }: { onConnected: () => void }) {
-  const [name, setName] = useState('');
-  const [ghlLocationId, setGhlLocationId] = useState('');
-  const [privateIntegrationToken, setPrivateIntegrationToken] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      await apiPost('/api/locations', { name, ghlLocationId, privateIntegrationToken });
-      setName('');
-      setGhlLocationId('');
-      setPrivateIntegrationToken('');
-      onConnected();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo conectar la subcuenta.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-3 text-left">
-      <p className="text-[11px] leading-relaxed text-gray-500">
-        En GHL: entra a la subcuenta → Settings → Private Integrations → crea una con permisos de contactos,
-        oportunidades, calendarios/citas, conversaciones y formularios (forms.readonly — necesario para el
-        módulo de Lanzamientos). Copia el token. El ID de la subcuenta está en la URL de
-        GHL (app.gohighlevel.com/location/<span className="text-gray-400">ESE-ID</span>/...).
-      </p>
-      <div>
-        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Nombre</label>
-        <input
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-        />
-      </div>
-      <div>
-        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-          ID de la subcuenta en GHL
-        </label>
-        <input
-          required
-          value={ghlLocationId}
-          onChange={(e) => setGhlLocationId(e.target.value)}
-          className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-        />
-      </div>
-      <div>
-        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-          Private Integration Token
-        </label>
-        <input
-          type="password"
-          required
-          value={privateIntegrationToken}
-          onChange={(e) => setPrivateIntegrationToken(e.target.value)}
-          className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-        />
-      </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60"
-      >
-        {saving ? 'Conectando…' : 'Conectar subcuenta'}
-      </button>
-    </form>
-  );
-}
-
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -147,7 +78,6 @@ export default function AppLayout() {
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(() => localStorage.getItem(SELECTED_LOCATION_KEY));
   const [syncing, setSyncing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showConnectForm, setShowConnectForm] = useState(false);
   const [subsOpen, setSubsOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark');
   const pollRef = useRef<number | null>(null);
@@ -205,6 +135,12 @@ export default function AppLayout() {
   const roleColor = user?.role === 'admin' ? '#22d3ee' : user?.role === 'manager' ? '#c084fc' : '#8b96a8';
   const roleLabel = user?.role === 'admin' ? 'Administrador' : user?.role === 'manager' ? 'Manager comercial' : 'Asesor (lectura)';
   const [title, subtitle] = PAGE_META[location.pathname] ?? ['ROISystem', ''];
+
+  // Only role `asesor` can be restricted — admins/managers always see the
+  // full nav (see prisma schema comment on User.allowedPages). An asesor
+  // with an empty allowedPages list is unrestricted too (nobody's configured
+  // it for them yet), so existing teammates aren't silently locked out.
+  const visibleNav = user?.role === 'asesor' && user.allowedPages.length > 0 ? NAV.filter((item) => user.allowedPages.includes(item.to)) : NAV;
 
   return (
     <div
@@ -284,16 +220,13 @@ export default function AppLayout() {
                     </button>
                   ))}
                   {user?.role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowConnectForm((v) => !v);
-                        setSubsOpen(false);
-                      }}
-                      className="mt-0.5 rounded border border-dashed border-accent/35 py-1.5 text-center text-[10.5px] font-bold text-accent"
+                    <Link
+                      to="/app/settings"
+                      onClick={() => setSubsOpen(false)}
+                      className="mt-0.5 block rounded border border-dashed border-accent/35 py-1.5 text-center text-[10.5px] font-bold text-accent"
                     >
                       + Agregar subcuenta
-                    </button>
+                    </Link>
                   )}
                 </div>
               )}
@@ -301,7 +234,7 @@ export default function AppLayout() {
           )}
 
           <nav className="flex flex-col gap-1">
-            {NAV.map((item) => (
+            {visibleNav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -366,52 +299,42 @@ export default function AppLayout() {
         <main className="flex flex-1 flex-col gap-4 px-6 py-4 pb-28">
           {loadError && <p className="text-sm text-red-400">{loadError}</p>}
 
-          {showConnectForm && (
-            <div className="max-w-lg rounded-lg border border-border2 bg-panel p-5">
-              <ConnectLocationForm
-                onConnected={() => {
-                  setShowConnectForm(false);
-                  loadLocations();
-                }}
-              />
-            </div>
-          )}
-
           {locations && locations.length === 0 && (
-            <div className="mx-auto mt-10 max-w-lg rounded-lg border border-border2 bg-panel p-8 text-center">
-              <h2 className="mb-2 text-lg font-semibold">Conecta tu primera subcuenta de GoHighLevel</h2>
-              <p className="mb-5 text-sm text-gray-400">
-                {user?.role === 'admin'
-                  ? 'Pega el token de una subcuenta para empezar a sincronizar contactos, oportunidades, llamadas y citas.'
-                  : 'Todavía no hay ninguna subcuenta de GHL conectada. Pide a un admin de tu agencia que la conecte.'}
-              </p>
-              {user?.role === 'admin' && <ConnectLocationForm onConnected={loadLocations} />}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm">
+              <span className="text-amber-300">
+                Todavía no hay ninguna subcuenta de GHL conectada — las pantallas de acá abajo están vacías hasta que
+                conectes una.
+              </span>
+              {user?.role === 'admin' ? (
+                <Link to="/app/settings" className="shrink-0 rounded border border-amber-700 px-3 py-1.5 text-amber-200 hover:bg-amber-900/40">
+                  Conectar en Configuración
+                </Link>
+              ) : (
+                <span className="shrink-0 text-amber-400/80">Pide a un admin que la conecte.</span>
+              )}
             </div>
           )}
 
-          {selectedLocation && (
-            <>
-              {selectedLocation.syncStatus !== 'synced' && (
-                <div className="flex items-center justify-between rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm">
-                  <span className="text-amber-300">
-                    {selectedLocation.syncStatus === 'syncing'
-                      ? 'Sincronizando datos desde GHL — esto puede tardar unos minutos…'
-                      : selectedLocation.syncStatus === 'error'
-                        ? 'La última sincronización falló.'
-                        : 'Esta subcuenta todavía no se ha sincronizado.'}
-                  </span>
-                  <button
-                    onClick={syncLocation}
-                    disabled={syncing || selectedLocation.syncStatus === 'syncing'}
-                    className="rounded border border-amber-700 px-3 py-1.5 text-amber-200 hover:bg-amber-900/40 disabled:opacity-60"
-                  >
-                    {selectedLocation.syncStatus === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}
-                  </button>
-                </div>
-              )}
-              <Outlet context={{ locationId: selectedLocation.id } satisfies OutletContext} />
-            </>
+          {selectedLocation && selectedLocation.syncStatus !== 'synced' && (
+            <div className="flex items-center justify-between rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm">
+              <span className="text-amber-300">
+                {selectedLocation.syncStatus === 'syncing'
+                  ? 'Sincronizando datos desde GHL — esto puede tardar unos minutos…'
+                  : selectedLocation.syncStatus === 'error'
+                    ? 'La última sincronización falló.'
+                    : 'Esta subcuenta todavía no se ha sincronizado.'}
+              </span>
+              <button
+                onClick={syncLocation}
+                disabled={syncing || selectedLocation.syncStatus === 'syncing'}
+                className="rounded border border-amber-700 px-3 py-1.5 text-amber-200 hover:bg-amber-900/40 disabled:opacity-60"
+              >
+                {selectedLocation.syncStatus === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}
+              </button>
+            </div>
           )}
+
+          <Outlet context={{ locationId: selectedLocation?.id ?? '', locations: locations ?? [], refreshLocations: loadLocations } satisfies OutletContext} />
         </main>
 
         {selectedLocation && (

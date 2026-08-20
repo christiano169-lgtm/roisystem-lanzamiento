@@ -75,7 +75,7 @@ export async function registerFirstAdmin(input: { tenantName: string; email: str
   return {
     token,
     tenant: { id: tenant.id, name: tenant.name },
-    user: { id: admin.id, email: admin.email, role: admin.role, isPlatformAdmin: admin.isPlatformAdmin },
+    user: { id: admin.id, email: admin.email, role: admin.role, isPlatformAdmin: admin.isPlatformAdmin, allowedPages: admin.allowedPages },
   };
 }
 
@@ -99,6 +99,13 @@ export async function login(input: { email: string; password: string }) {
   const token = signAuthToken({ sub: user.id, tenantId: user.tenantId, role: user.role, isPlatformAdmin: user.isPlatformAdmin });
   return {
     token,
-    user: { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId, isPlatformAdmin: user.isPlatformAdmin },
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+      isPlatformAdmin: user.isPlatformAdmin,
+      allowedPages: user.allowedPages,
+    },
   };
 }

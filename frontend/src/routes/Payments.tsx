@@ -5,6 +5,7 @@ import { apiGet } from '../lib/api';
 import { daysAgoISODate, formatCurrency, formatDate } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
 import RegisterPaymentForm from '../components/RegisterPaymentForm';
+import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface Payment {
@@ -31,6 +32,7 @@ export default function Payments() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -53,6 +55,8 @@ export default function Payments() {
 
   const canRegister = user?.role === 'admin' || user?.role === 'manager';
   const total = payments?.reduce((sum, p) => sum + Number(p.amount), 0) ?? 0;
+
+  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

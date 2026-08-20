@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { apiGet, apiPatch, ApiError } from '../lib/api';
 import { daysAgoISODate, formatNumber } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
+import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface ContactRow {
@@ -48,10 +49,12 @@ export default function Bandeja() {
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!locationId) return;
     apiGet<{ users: GhlUser[] }>(`/api/ghl-users?locationId=${locationId}`).then((res) => setOwners(res.users));
   }, [locationId]);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -103,6 +106,8 @@ export default function Bandeja() {
     { id: 'sin', label: 'Sin asignar' },
     { id: 'sla', label: 'Fuera de SLA (>30 min)' },
   ];
+
+  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

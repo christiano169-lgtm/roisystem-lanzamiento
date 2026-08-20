@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
-import { apiDelete, apiGet, apiPost, apiPut, ApiError } from '../lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError } from '../lib/api';
+import { NAV } from './AppLayout';
 import type { OutletContext } from './AppLayout';
 
 interface Location {
@@ -45,6 +46,113 @@ function SectionCard({ title, description, children }: { title: string; descript
       <p className="mb-4 mt-1 text-[12px] text-gray-500">{description}</p>
       {children}
     </div>
+  );
+}
+
+/** Fase 6: pastes a GHL Private Integration Token instead of an OAuth redirect — see README "Conexión con GHL". Moved here (from AppLayout) so connecting a subcuenta lives in one place instead of blocking the rest of the app. */
+function ConnectionSection() {
+  const { locations, refreshLocations } = useOutletContext<OutletContext>();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const canSync = isAdmin || user?.role === 'manager';
+
+  const [name, setName] = useState('');
+  const [ghlLocationId, setGhlLocationId] = useState('');
+  const [privateIntegrationToken, setPrivateIntegrationToken] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+
+  async function connect(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiPost('/api/locations', { name, ghlLocationId, privateIntegrationToken });
+      setName('');
+      setGhlLocationId('');
+      setPrivateIntegrationToken('');
+      await refreshLocations();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo conectar la subcuenta.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function syncNow(id: string) {
+    setSyncingId(id);
+    try {
+      await apiPost(`/api/locations/${id}/sync`);
+      await refreshLocations();
+    } finally {
+      setSyncingId(null);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Conexión GHL"
+      description="Todas las subcuentas de GoHighLevel conectadas a esta agencia. Cada una se conecta pegando su propio Private Integration Token — no hace falta instalar ninguna app en GHL."
+    >
+      <div className="mb-4 flex flex-col gap-2">
+        {locations.map((l) => (
+          <div key={l.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border2 bg-card px-3.5 py-3">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{l.name}</span>
+            <span className="font-mono text-[11px] text-gray-500">{l.ghlLocationId}</span>
+            <span className={`flex items-center gap-1.5 text-[11px] ${l.syncStatus === 'synced' ? 'text-emerald-400' : 'text-amber-400'}`}>
+              <span className={`roi-pulse h-[6px] w-[6px] rounded-full ${l.syncStatus === 'synced' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {l.syncStatus}
+            </span>
+            {canSync && (
+              <button
+                onClick={() => syncNow(l.id)}
+                disabled={syncingId === l.id || l.syncStatus === 'syncing'}
+                className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-60"
+              >
+                {syncingId === l.id || l.syncStatus === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}
+              </button>
+            )}
+          </div>
+        ))}
+        {locations.length === 0 && <p className="text-[12px] text-gray-500">Sin subcuentas conectadas todavía.</p>}
+      </div>
+
+      {isAdmin ? (
+        <form onSubmit={connect} className="flex max-w-lg flex-col gap-3 text-left">
+          <p className="text-[11px] leading-relaxed text-gray-500">
+            En GHL: entra a la subcuenta → Settings → Private Integrations → crea una con permisos de contactos,
+            oportunidades, calendarios/citas, conversaciones y formularios (forms.readonly — necesario para el
+            módulo de Lanzamientos). Copia el token. El ID de la subcuenta está en la URL de GHL
+            (app.gohighlevel.com/location/<span className="text-gray-400">ESE-ID</span>/...).
+          </p>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Nombre</label>
+            <input required value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">ID de la subcuenta en GHL</label>
+            <input required value={ghlLocationId} onChange={(e) => setGhlLocationId(e.target.value)} className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Private Integration Token</label>
+            <input
+              type="password"
+              required
+              value={privateIntegrationToken}
+              onChange={(e) => setPrivateIntegrationToken(e.target.value)}
+              className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+            />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button type="submit" disabled={saving} className="w-fit rounded bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
+            {saving ? 'Conectando…' : '+ Conectar subcuenta'}
+          </button>
+        </form>
+      ) : (
+        <p className="text-[12px] text-gray-500">Solo un administrador puede conectar subcuentas nuevas.</p>
+      )}
+    </SectionCard>
   );
 }
 
@@ -554,15 +662,74 @@ interface TeamMember {
   email: string;
   role: 'admin' | 'manager' | 'asesor';
   ghlUserId: string | null;
+  allowedPages: string[];
 }
 
 const ROLE_LABEL: Record<TeamMember['role'], string> = { admin: 'Administrador', manager: 'Manager', asesor: 'Asesor' };
 
+/** Checkbox grid of nav pages — reused by both the create form (for a new asesor) and the per-member edit panel. Empty selection = unrestricted (see User.allowedPages). */
+function PageAccessCheckboxes({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
+  function toggle(to: string) {
+    onChange(selected.includes(to) ? selected.filter((p) => p !== to) : [...selected, to]);
+  }
+  return (
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+      {NAV.map((item) => (
+        <label key={item.to} className="flex items-center gap-2 text-[12px] text-gray-300">
+          <input type="checkbox" checked={selected.includes(item.to)} onChange={() => toggle(item.to)} className="h-3.5 w-3.5" />
+          {item.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function EditMemberRow({ member, onSaved }: { member: TeamMember; onSaved: () => void }) {
+  const [role, setRole] = useState(member.role);
+  const [allowedPages, setAllowedPages] = useState<string[]>(member.allowedPages);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await apiPatch(`/api/team/${member.id}`, { role, allowedPages });
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-[#1e1e23] bg-card px-4 py-3.5">
+      <div className="flex items-center gap-3">
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Rol</label>
+        <select value={role} onChange={(e) => setRole(e.target.value as TeamMember['role'])} className="rounded border border-border2 bg-input px-2.5 py-1.5 text-[12px] outline-none">
+          <option value="admin">Administrador</option>
+          <option value="manager">Manager</option>
+          <option value="asesor">Asesor</option>
+        </select>
+      </div>
+      {role === 'asesor' && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Pantallas visibles {allowedPages.length === 0 && <span className="normal-case text-gray-600">(sin marcar = ve todas)</span>}
+          </p>
+          <PageAccessCheckboxes selected={allowedPages} onChange={setAllowedPages} />
+        </div>
+      )}
+      <button onClick={save} disabled={saving} className="w-fit rounded border border-accent/40 px-3 py-1.5 text-[12px] font-bold text-accent disabled:opacity-60">
+        {saving ? 'Guardando…' : 'Guardar permisos'}
+      </button>
+    </div>
+  );
+}
+
 function TeamSection() {
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [form, setForm] = useState({ email: '', password: '', role: 'asesor' as TeamMember['role'], ghlUserId: '' });
+  const [form, setForm] = useState({ email: '', password: '', role: 'asesor' as TeamMember['role'], ghlUserId: '', allowedPages: [] as string[] });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   function load() {
     apiGet<{ users: TeamMember[] }>('/api/team').then((res) => setMembers(res.users));
@@ -577,7 +744,7 @@ function TeamSection() {
     try {
       await apiPost('/api/team', { ...form, ghlUserId: form.ghlUserId || undefined });
       setMessage(`Cuenta creada. Comparte estas credenciales: ${form.email} / ${form.password}`);
-      setForm({ email: '', password: '', role: 'asesor', ghlUserId: '' });
+      setForm({ email: '', password: '', role: 'asesor', ghlUserId: '', allowedPages: [] });
       load();
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : 'No se pudo crear el usuario.');
@@ -592,51 +759,61 @@ function TeamSection() {
   }
 
   return (
-    <SectionCard title="Equipo y asesores" description="Da de alta a tus closers, setters y managers — tú eliges su contraseña inicial y se la compartes.">
-      <form onSubmit={submit} className="mb-4 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Email</label>
-          <input
-            type="email"
-            required
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            className="w-56 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-          />
+    <SectionCard title="Equipo y asesores" description="Da de alta a tus closers, setters y managers — tú eliges su contraseña inicial y se la compartes. Para un asesor podés elegir exactamente qué pantallas del menú puede ver.">
+      <form onSubmit={submit} className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Email</label>
+            <input
+              type="email"
+              required
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              className="w-56 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Contraseña inicial</label>
+            <input
+              required
+              minLength={8}
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              className="w-40 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Rol</label>
+            <select
+              value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value as TeamMember['role'] })}
+              className="rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+            >
+              <option value="admin">Administrador</option>
+              <option value="manager">Manager</option>
+              <option value="asesor">Asesor</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">GHL user id (opcional)</label>
+            <input
+              value={form.ghlUserId}
+              onChange={(e) => setForm({ ...form, ghlUserId: e.target.value })}
+              className="w-48 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+            />
+          </div>
+          <button type="submit" disabled={saving} className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
+            {saving ? 'Creando…' : '+ Añadir'}
+          </button>
         </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Contraseña inicial</label>
-          <input
-            required
-            minLength={8}
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            className="w-40 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Rol</label>
-          <select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value as TeamMember['role'] })}
-            className="rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-          >
-            <option value="admin">Administrador</option>
-            <option value="manager">Manager</option>
-            <option value="asesor">Asesor</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">GHL user id (opcional)</label>
-          <input
-            value={form.ghlUserId}
-            onChange={(e) => setForm({ ...form, ghlUserId: e.target.value })}
-            className="w-48 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
-          />
-        </div>
-        <button type="submit" disabled={saving} className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
-          {saving ? 'Creando…' : '+ Añadir'}
-        </button>
+        {form.role === 'asesor' && (
+          <div className="max-w-xl rounded-md border border-border2 bg-card p-3">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              Pantallas visibles {form.allowedPages.length === 0 && <span className="normal-case text-gray-600">(sin marcar = ve todas)</span>}
+            </p>
+            <PageAccessCheckboxes selected={form.allowedPages} onChange={(allowedPages) => setForm({ ...form, allowedPages })} />
+          </div>
+        )}
       </form>
       {message && <p className="mb-3 text-xs text-gray-300">{message}</p>}
       <div className="overflow-hidden rounded-md border border-border2">
@@ -651,16 +828,28 @@ function TeamSection() {
           </thead>
           <tbody>
             {members.map((m) => (
-              <tr key={m.id} className="border-t border-[#1e1e23]">
-                <td className="px-4 py-2.5 font-semibold">{m.email}</td>
-                <td className="px-4 py-2.5">{ROLE_LABEL[m.role]}</td>
-                <td className="px-4 py-2.5 text-gray-400">{m.ghlUserId ?? '—'}</td>
-                <td className="px-4 py-2.5 text-right">
-                  <button onClick={() => remove(m.id)} className="text-[11px] text-gray-500 hover:text-red-400">
-                    Eliminar
-                  </button>
-                </td>
-              </tr>
+              <>
+                <tr key={m.id} className="border-t border-[#1e1e23]">
+                  <td className="px-4 py-2.5 font-semibold">{m.email}</td>
+                  <td className="px-4 py-2.5">{ROLE_LABEL[m.role]}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{m.ghlUserId ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button onClick={() => setEditingId((prev) => (prev === m.id ? null : m.id))} className="mr-3 text-[11px] text-accent hover:underline">
+                      {editingId === m.id ? 'Cerrar' : 'Permisos'}
+                    </button>
+                    <button onClick={() => remove(m.id)} className="text-[11px] text-gray-500 hover:text-red-400">
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+                {editingId === m.id && (
+                  <tr key={`${m.id}-edit`}>
+                    <td colSpan={4} className="p-0">
+                      <EditMemberRow member={m} onSaved={() => { setEditingId(null); load(); }} />
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>
@@ -1168,6 +1357,7 @@ function LaunchesSection() {
 }
 
 const WIZARD_STEPS = [
+  { id: 'conexion', label: 'Conexión GHL' },
   { id: 'equipo', label: 'Equipo y asesores' },
   { id: 'lanzamientos', label: 'Lanzamientos' },
   { id: 'ia', label: 'Prompts / IA' },
@@ -1181,7 +1371,7 @@ const WIZARD_STEPS = [
 
 export default function Settings() {
   const { user } = useAuth();
-  const [step, setStep] = useState<(typeof WIZARD_STEPS)[number]['id']>('equipo');
+  const [step, setStep] = useState<(typeof WIZARD_STEPS)[number]['id']>('conexion');
   const isAdmin = user?.role === 'admin';
 
   return (
@@ -1201,6 +1391,7 @@ export default function Settings() {
       </div>
 
       <div className="flex flex-col gap-4">
+        {step === 'conexion' && <ConnectionSection />}
         {step === 'equipo' && isAdmin && <TeamSection />}
         {step === 'lanzamientos' && (isAdmin || user?.role === 'manager') && <LaunchesSection />}
         {step === 'ia' && isAdmin && (

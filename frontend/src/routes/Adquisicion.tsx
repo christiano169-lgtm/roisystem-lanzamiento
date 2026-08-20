@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../lib/api';
 import { daysAgoISODate, formatCurrency, formatNumber, formatPct } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
+import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface AcquisitionRow {
@@ -33,6 +34,7 @@ export default function Adquisicion() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -52,6 +54,8 @@ export default function Adquisicion() {
       cancelled = true;
     };
   }, [locationId, from, to]);
+
+  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

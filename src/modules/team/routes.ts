@@ -8,7 +8,7 @@ export const teamRouter = Router();
 
 teamRouter.use(requireAuth);
 
-const SAFE_SELECT = { id: true, email: true, role: true, ghlUserId: true, createdAt: true } as const;
+const SAFE_SELECT = { id: true, email: true, role: true, ghlUserId: true, allowedPages: true, createdAt: true } as const;
 
 /** Control del sistema → "Equipo y asesores". Scoped to the caller's own tenant (unlike /api/platform, which is cross-tenant and admin-of-admins only). */
 teamRouter.get('/', async (req, res, next) => {
@@ -25,6 +25,8 @@ const createSchema = z.object({
   password: z.string().min(8),
   role: z.enum(['admin', 'manager', 'asesor']),
   ghlUserId: z.string().min(1).optional(),
+  // Empty/omitted = unrestricted (see prisma schema comment on User.allowedPages).
+  allowedPages: z.array(z.string()).optional(),
 });
 
 /** Admin picks the teammate's initial password and hands it off manually — same no-invite-email pattern as platform/service.ts's createTenantForClient. */
@@ -36,10 +38,45 @@ teamRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
     const passwordHash = await hashPassword(input.password);
     const user = await prisma.user.create({
-      data: { tenantId: req.auth!.tenantId, email: input.email, passwordHash, role: input.role, ghlUserId: input.ghlUserId },
+      data: {
+        tenantId: req.auth!.tenantId,
+        email: input.email,
+        passwordHash,
+        role: input.role,
+        ghlUserId: input.ghlUserId,
+        allowedPages: input.allowedPages ?? [],
+      },
       select: SAFE_SELECT,
     });
     res.status(201).json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const updateSchema = z.object({
+  role: z.enum(['admin', 'manager', 'asesor']).optional(),
+  allowedPages: z.array(z.string()).optional(),
+  ghlUserId: z.string().min(1).nullable().optional(),
+});
+
+/** Lets an admin change a teammate's role and/or which nav pages they can see (only enforced for role `asesor`, see prisma schema). */
+teamRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
+  try {
+    const input = updateSchema.parse(req.body);
+    const existing = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.auth!.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+
+    const user = await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.role !== undefined ? { role: input.role } : {}),
+        ...(input.allowedPages !== undefined ? { allowedPages: input.allowedPages } : {}),
+        ...(input.ghlUserId !== undefined ? { ghlUserId: input.ghlUserId } : {}),
+      },
+      select: SAFE_SELECT,
+    });
+    res.json({ user });
   } catch (err) {
     next(err);
   }

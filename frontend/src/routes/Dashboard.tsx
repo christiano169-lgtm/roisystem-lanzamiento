@@ -5,6 +5,7 @@ import { daysAgoISODate, formatCurrency, formatMinutes, formatNumber, formatPct 
 import KpiCard from '../components/KpiCard';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
 import ObjectionsWidget from '../components/ObjectionsWidget';
+import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface OperationalKpis {
@@ -147,10 +148,12 @@ export default function Dashboard() {
   const [hotmart, setHotmart] = useState<HotmartSummary | null>(null);
 
   useEffect(() => {
+    if (!locationId) return;
     apiGet<{ tags: TagRow[] }>(`/api/tags?locationId=${locationId}`).then((res) => setTags(res.tags));
   }, [locationId]);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -180,6 +183,7 @@ export default function Dashboard() {
   }, [locationId, from, to, activeTags]);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     const qs = `locationId=${locationId}&from=${toRangeParam(from, false)}&to=${toRangeParam(to, true)}`;
     // Marketing widgets are best-effort/optional — a tenant with no Meta
@@ -207,6 +211,8 @@ export default function Dashboard() {
   function toggleTag(name: string) {
     setActiveTags((prev) => (prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]));
   }
+
+  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

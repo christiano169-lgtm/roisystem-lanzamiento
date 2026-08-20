@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { apiGet, apiPatch, ApiError } from '../lib/api';
 import { daysAgoISODate, formatCurrency } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
+import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface PipelineStage {
@@ -55,6 +56,7 @@ export default function CrmBoard() {
   const [moveError, setMoveError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!locationId) return;
     apiGet<{ stages: PipelineStage[] }>(`/api/pipeline-stages?locationId=${locationId}`).then((res) => {
       setStages(res.stages);
       setPipelineName((prev) => prev || res.stages[0]?.pipelineName || '');
@@ -63,6 +65,7 @@ export default function CrmBoard() {
   }, [locationId]);
 
   useEffect(() => {
+    if (!locationId) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -104,6 +107,8 @@ export default function CrmBoard() {
       setMoveError(err instanceof ApiError ? err.message : 'No se pudo mover la oportunidad en GHL.');
     }
   }
+
+  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

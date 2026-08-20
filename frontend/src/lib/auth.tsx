@@ -9,6 +9,7 @@ export interface AuthUser {
   role: UserRole;
   tenantId: string;
   isPlatformAdmin: boolean;
+  allowedPages: string[];
 }
 
 interface LoginResponse {
@@ -22,7 +23,7 @@ interface LoginResponse {
 interface RegisterResponse {
   token: string;
   tenant: { id: string; name: string };
-  user: { id: string; email: string; role: UserRole; isPlatformAdmin: boolean };
+  user: { id: string; email: string; role: UserRole; isPlatformAdmin: boolean; allowedPages: string[] };
 }
 
 interface AuthContextValue {

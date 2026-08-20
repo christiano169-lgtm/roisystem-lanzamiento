@@ -106,6 +106,14 @@ model User {
   // Set manually via the profile endpoint — there is no reliable automatic
   // match between a dashboard login and a GHL user.
   ghlUserId    String?
+  // Per-user page access, admin-configurable (Configuración → Equipo).
+  // Empty array = unrestricted (sees every nav item their role would
+  // normally see — the default for admin/manager and for any asesor an
+  // admin hasn't explicitly restricted yet). A non-empty array is only
+  // enforced for role `asesor` — admins/managers always see everything
+  // regardless of this field. Values are the nav `to` paths from
+  // frontend/src/routes/AppLayout.tsx (e.g. "/app/crm").
+  allowedPages String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
