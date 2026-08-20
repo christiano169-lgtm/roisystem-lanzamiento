@@ -1,17 +1,11 @@
 import { useEffect, useState } from 'react';
 import { apiGet } from '../lib/api';
-import { daysAgoISODate, formatCurrency, formatMinutes, formatNumber, formatPct } from '../lib/format';
+import { daysAgoISODate, formatCurrency, formatNumber } from '../lib/format';
 import KpiCard from '../components/KpiCard';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
 
 interface OperationalKpis {
   leadsGenerados: number;
-  llamadas: number;
-  contestadas: number;
-  tasaContestacionPct: number;
-  tiempoAlLeadMinutosPromedio: number | null;
-  agendadas: number;
-  asistidas: number;
   ingresos: number;
   efectivoCobrado: number;
   ticketPromedio: number;
@@ -80,15 +74,8 @@ export default function Overview() {
       {data && (
         <div className="flex flex-col gap-2.5">
           <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Totales de la agencia</span>
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
             <KpiCard label="Leads generados" value={formatNumber(data.totals.leadsGenerados)} />
-            <KpiCard label="Llamadas" value={formatNumber(data.totals.llamadas)} />
-            <KpiCard label="Contestadas" value={formatNumber(data.totals.contestadas)} sub={`Tasa ${formatPct(data.totals.tasaContestacionPct)}`} accent="#f2f6fb" />
-            <KpiCard label="Tiempo al lead" value={formatMinutes(data.totals.tiempoAlLeadMinutosPromedio)} accent="#c084fc" />
-            <KpiCard label="Agendadas" value={formatNumber(data.totals.agendadas)} accent="#e879f9" />
-            <KpiCard label="Asistidas" value={formatNumber(data.totals.asistidas)} accent="#34d399" />
-          </div>
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
             <KpiCard label="Ingresos" value={formatCurrency(data.totals.ingresos)} accent="#34d399" />
             <KpiCard label="Efectivo cobrado" value={formatCurrency(data.totals.efectivoCobrado)} accent="#34d399" />
             <KpiCard label="Ticket promedio" value={formatCurrency(data.totals.ticketPromedio)} accent="#22d3ee" />
@@ -105,9 +92,6 @@ export default function Overview() {
                 <tr className="bg-[#141418] text-left text-[12px] text-gray-400">
                   <th className="px-4 py-3 font-medium">Subcuenta</th>
                   <th className="px-4 py-3 font-medium">Leads</th>
-                  <th className="px-4 py-3 font-medium">Llamadas</th>
-                  <th className="px-4 py-3 font-medium">Agendadas</th>
-                  <th className="px-4 py-3 font-medium">Asistidas</th>
                   <th className="px-4 py-3 font-medium">Ingresos</th>
                   <th className="px-4 py-3 font-medium">Efectivo</th>
                 </tr>
@@ -115,7 +99,7 @@ export default function Overview() {
               <tbody>
                 {data.byLocation.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
+                    <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
                       No hay subcuentas conectadas todavía.
                     </td>
                   </tr>
@@ -124,9 +108,6 @@ export default function Overview() {
                   <tr key={row.locationId} className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">
                     <td className="px-4 py-3 font-semibold">{row.locationName}</td>
                     <td className="px-4 py-3">{formatNumber(row.kpis.leadsGenerados)}</td>
-                    <td className="px-4 py-3 text-accent">{formatNumber(row.kpis.llamadas)}</td>
-                    <td className="px-4 py-3 text-fuchsia-400">{formatNumber(row.kpis.agendadas)}</td>
-                    <td className="px-4 py-3 text-emerald-400">{formatNumber(row.kpis.asistidas)}</td>
                     <td className="px-4 py-3 text-emerald-400">{formatCurrency(row.kpis.ingresos)}</td>
                     <td className="px-4 py-3 text-emerald-400">{formatCurrency(row.kpis.efectivoCobrado)}</td>
                   </tr>
