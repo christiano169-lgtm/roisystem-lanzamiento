@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../../lib/api';
 import { daysAgoISODate, formatMinutes, formatNumber } from '../../lib/format';
 import RangePicker, { type RangePreset } from '../../components/RangePicker';
+import NoLocationState from '../../components/NoLocationState';
 import type { OutletContext } from '../AppLayout';
 
 interface SetterRow {
@@ -16,6 +17,15 @@ interface SetterRow {
   calidadIaPromedio: number | null;
 }
 
+interface ConversationDetailRow {
+  conversationId: string;
+  contactName: string;
+  contactPhone: string | null;
+  status: 'atendido' | 'pendiente';
+  lastMessageAt: string | null;
+  primeraRespuestaMinutos: number | null;
+}
+
 function toRangeParam(dateOnly: string, endOfDay: boolean): string {
   return new Date(`${dateOnly}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`).toISOString();
 }
@@ -26,6 +36,55 @@ function qualityColor(score: number): string {
   return '#ef4444';
 }
 
+function DetailPanel({ locationId, ownerGhlId, from, to }: { locationId: string; ownerGhlId: string; from: string; to: string }) {
+  const [rows, setRows] = useState<ConversationDetailRow[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const qs = `locationId=${locationId}&ownerGhlId=${encodeURIComponent(ownerGhlId)}&from=${toRangeParam(from, false)}&to=${toRangeParam(to, true)}`;
+    apiGet<{ detail: ConversationDetailRow[] }>(`/api/setters/detail?${qs}`).then((res) => !cancelled && setRows(res.detail));
+    return () => {
+      cancelled = true;
+    };
+  }, [locationId, ownerGhlId, from, to]);
+
+  if (!rows) return <p className="px-4 py-3 text-[12px] text-gray-500">Cargando conversaciones…</p>;
+  if (rows.length === 0) return <p className="px-4 py-3 text-[12px] text-gray-500">Sin conversaciones en este rango.</p>;
+
+  return (
+    <table className="w-full text-[12.5px]">
+      <thead>
+        <tr className="bg-[#0f0f13] text-left text-[11px] text-gray-500">
+          <th className="px-4 py-2 font-medium">Contacto</th>
+          <th className="px-4 py-2 font-medium">Estado</th>
+          <th className="px-4 py-2 font-medium">1ª respuesta</th>
+          <th className="px-4 py-2 font-medium">Último mensaje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.conversationId} className="border-t border-[#1e1e23]">
+            <td className="px-4 py-2">
+              <span className="block font-semibold">{r.contactName}</span>
+              {r.contactPhone && <span className="block font-mono text-[10.5px] text-gray-500">{r.contactPhone}</span>}
+            </td>
+            <td className="px-4 py-2">
+              <span
+                className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                style={{ background: r.status === 'atendido' ? '#34d39922' : '#ef444422', color: r.status === 'atendido' ? '#34d399' : '#ef4444' }}
+              >
+                {r.status === 'atendido' ? 'Atendido' : 'Sin responder'}
+              </span>
+            </td>
+            <td className="px-4 py-2 text-gray-300">{formatMinutes(r.primeraRespuestaMinutos)}</td>
+            <td className="px-4 py-2 text-gray-500">{r.lastMessageAt ? new Date(r.lastMessageAt).toLocaleString('es-CO') : '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export default function Setters() {
   const { locationId } = useOutletContext<OutletContext>();
   const [range, setRange] = useState<RangePreset>('30');
@@ -34,6 +93,7 @@ export default function Setters() {
   const [rows, setRows] = useState<SetterRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
 
   useEffect(() => {
     if (!locationId) return;
@@ -61,6 +121,8 @@ export default function Setters() {
     (acc, r) => ({ assignados: acc.assignados + r.assignados, atendidos: acc.atendidos + r.atendidos, pendientes: acc.pendientes + r.pendientes, citas: acc.citas + r.citas }),
     { assignados: 0, atendidos: 0, pendientes: 0, citas: 0 },
   );
+
+  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">
@@ -112,36 +174,54 @@ export default function Setters() {
                 <th className="px-4 py-3 font-medium">1ª respuesta</th>
                 <th className="px-4 py-3 font-medium">Citas</th>
                 <th className="px-4 py-3 font-medium">Calidad IA</th>
+                <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {rows?.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
+                  <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
                     Sin chats asignados en este rango todavía.
                   </td>
                 </tr>
               )}
               {rows?.map((r) => (
-                <tr key={r.ownerGhlId} className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">
-                  <td className="px-4 py-3 font-semibold">{r.name}</td>
-                  <td className="px-4 py-3 text-accent">{formatNumber(r.assignados)}</td>
-                  <td className="px-4 py-3 text-emerald-400">{formatNumber(r.atendidos)}</td>
-                  <td className="px-4 py-3" style={{ color: r.pendientes > 5 ? '#ef4444' : '#f59e0b' }}>
-                    {formatNumber(r.pendientes)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-300">{formatMinutes(r.primeraRespuestaMinutosPromedio)}</td>
-                  <td className="px-4 py-3 text-fuchsia-400">{formatNumber(r.citas)}</td>
-                  <td className="px-4 py-3">
-                    {r.calidadIaPromedio !== null ? (
-                      <span className="font-bold" style={{ color: qualityColor(r.calidadIaPromedio) }}>
-                        {r.calidadIaPromedio.toFixed(1)}/10
-                      </span>
-                    ) : (
-                      <span className="text-gray-600">—</span>
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={r.ownerGhlId}>
+                  <tr className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">
+                    <td className="px-4 py-3 font-semibold">{r.name}</td>
+                    <td className="px-4 py-3 text-accent">{formatNumber(r.assignados)}</td>
+                    <td className="px-4 py-3 text-emerald-400">{formatNumber(r.atendidos)}</td>
+                    <td className="px-4 py-3" style={{ color: r.pendientes > 5 ? '#ef4444' : '#f59e0b' }}>
+                      {formatNumber(r.pendientes)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-300">{formatMinutes(r.primeraRespuestaMinutosPromedio)}</td>
+                    <td className="px-4 py-3 text-fuchsia-400">{formatNumber(r.citas)}</td>
+                    <td className="px-4 py-3">
+                      {r.calidadIaPromedio !== null ? (
+                        <span className="font-bold" style={{ color: qualityColor(r.calidadIaPromedio) }}>
+                          {r.calidadIaPromedio.toFixed(1)}/10
+                        </span>
+                      ) : (
+                        <span className="text-gray-600">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setExpandedOwner((prev) => (prev === r.ownerGhlId ? null : r.ownerGhlId))}
+                        className="text-[11px] text-accent hover:underline"
+                      >
+                        {expandedOwner === r.ownerGhlId ? 'Ocultar' : 'Ver detalle'}
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedOwner === r.ownerGhlId && locationId && (
+                    <tr>
+                      <td colSpan={8} className="border-t border-[#1e1e23] bg-card p-0">
+                        <DetailPanel locationId={locationId} ownerGhlId={r.ownerGhlId} from={from} to={to} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

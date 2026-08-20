@@ -101,3 +101,63 @@ export async function getSettersSummary(locationId: string, filters: SetterFilte
     })
     .sort((a, b) => b.assignados - a.assignados);
 }
+
+export interface SetterConversationRow {
+  conversationId: string;
+  contactName: string;
+  contactPhone: string | null;
+  ownerGhlId: string | null;
+  ownerName: string;
+  status: 'atendido' | 'pendiente';
+  lastMessageAt: string | null;
+  primeraRespuestaMinutos: number | null;
+}
+
+/**
+ * Per-conversation drill-down behind the Setters table — answers "¿quién
+ * respondió y quién no, y cuándo?" at the individual chat level instead of
+ * only the aggregated counts getSettersSummary produces.
+ */
+export async function getSettersDetail(locationId: string, filters: SetterFilters, ownerGhlId?: string): Promise<SetterConversationRow[]> {
+  const [conversations, ghlUsers] = await Promise.all([
+    prisma.conversation.findMany({
+      where: { ...conversationWhere(locationId, filters), ...(ownerGhlId ? { ownerGhlId } : {}) },
+      include: { messages: { orderBy: { ghlCreatedAt: 'asc' } } },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 500,
+    }),
+    prisma.ghlUser.findMany({ where: { locationId } }),
+  ]);
+
+  const nameByOwner = new Map(ghlUsers.map((u) => [u.ghlUserId, u.name]));
+
+  // Conversations carry `contactGhlId`, not the Contact row's own id — this
+  // resolves display names the same way Bandeja does, without assuming
+  // every conversation has a matching synced Contact.
+  const contactGhlIds = conversations.map((c) => c.contactGhlId).filter((id): id is string => !!id);
+  const contacts = contactGhlIds.length
+    ? await prisma.contact.findMany({ where: { locationId, ghlId: { in: contactGhlIds } }, select: { ghlId: true, firstName: true, lastName: true, phone: true } })
+    : [];
+  const contactByGhlId = new Map(contacts.map((c) => [c.ghlId, c]));
+
+  return conversations.map((conv) => {
+    const contact = conv.contactGhlId ? contactByGhlId.get(conv.contactGhlId) : undefined;
+    const firstInbound = conv.messages.find((m) => m.direction === 'inbound' && m.ghlCreatedAt);
+    const firstOutbound = conv.messages.find((m) => m.direction === 'outbound' && m.ghlCreatedAt);
+    const primeraRespuestaMinutos =
+      firstInbound?.ghlCreatedAt && firstOutbound?.ghlCreatedAt && firstOutbound.ghlCreatedAt >= firstInbound.ghlCreatedAt
+        ? Math.round(((firstOutbound.ghlCreatedAt.getTime() - firstInbound.ghlCreatedAt.getTime()) / 60000) * 10) / 10
+        : null;
+
+    return {
+      conversationId: conv.id,
+      contactName: [contact?.firstName, contact?.lastName].filter(Boolean).join(' ') || contact?.phone || '(sin nombre)',
+      contactPhone: contact?.phone ?? null,
+      ownerGhlId: conv.ownerGhlId,
+      ownerName: conv.ownerGhlId ? (nameByOwner.get(conv.ownerGhlId) ?? conv.ownerGhlId) : 'Sin asignar',
+      status: firstOutbound ? 'atendido' : 'pendiente',
+      lastMessageAt: conv.lastMessageAt?.toISOString() ?? null,
+      primeraRespuestaMinutos,
+    };
+  });
+}
