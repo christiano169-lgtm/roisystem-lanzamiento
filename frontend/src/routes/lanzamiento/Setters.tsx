@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../../lib/api';
-import { daysAgoISODate, formatMinutes, formatNumber } from '../../lib/format';
-import RangePicker, { type RangePreset } from '../../components/RangePicker';
+import { formatMinutes, formatNumber } from '../../lib/format';
+import LaunchPhaseSelector, { type LaunchWindow } from '../../components/LaunchPhaseSelector';
 import NoLocationState from '../../components/NoLocationState';
 import type { OutletContext } from '../AppLayout';
 
@@ -26,10 +26,6 @@ interface ConversationDetailRow {
   primeraRespuestaMinutos: number | null;
 }
 
-function toRangeParam(dateOnly: string, endOfDay: boolean): string {
-  return new Date(`${dateOnly}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`).toISOString();
-}
-
 function qualityColor(score: number): string {
   if (score >= 8) return '#34d399';
   if (score >= 6) return '#f59e0b';
@@ -41,7 +37,7 @@ function DetailPanel({ locationId, ownerGhlId, from, to }: { locationId: string;
 
   useEffect(() => {
     let cancelled = false;
-    const qs = `locationId=${locationId}&ownerGhlId=${encodeURIComponent(ownerGhlId)}&from=${toRangeParam(from, false)}&to=${toRangeParam(to, true)}`;
+    const qs = `locationId=${locationId}&ownerGhlId=${encodeURIComponent(ownerGhlId)}&from=${from}&to=${to}`;
     apiGet<{ detail: ConversationDetailRow[] }>(`/api/setters/detail?${qs}`)
       .then((res) => !cancelled && setRows(res.detail))
       .catch(() => !cancelled && setRows([]));
@@ -89,21 +85,23 @@ function DetailPanel({ locationId, ownerGhlId, from, to }: { locationId: string;
 
 export default function Setters() {
   const { locationId } = useOutletContext<OutletContext>();
-  const [range, setRange] = useState<RangePreset>('30');
-  const [from, setFrom] = useState(() => daysAgoISODate(30));
-  const [to, setTo] = useState(() => daysAgoISODate(0));
+  const [window_, setWindow] = useState<LaunchWindow | null>(null);
   const [rows, setRows] = useState<SetterRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState('');
 
   useEffect(() => {
-    if (!locationId) return;
+    if (!locationId || !window_) {
+      setRows(null);
+      return;
+    }
     let cancelled = false;
     async function load() {
       setLoading(true);
       setError(null);
-      const qs = `locationId=${locationId}&from=${toRangeParam(from, false)}&to=${toRangeParam(to, true)}`;
+      const qs = `locationId=${locationId}&from=${window_!.from}&to=${window_!.to}`;
       try {
         const res = await apiGet<{ summary: SetterRow[] }>(`/api/setters/summary?${qs}`);
         if (!cancelled) setRows(res.summary);
@@ -117,9 +115,11 @@ export default function Setters() {
     return () => {
       cancelled = true;
     };
-  }, [locationId, from, to]);
+  }, [locationId, window_]);
 
-  const totals = rows?.reduce(
+  const visibleRows = ownerFilter ? (rows ?? []).filter((r) => r.ownerGhlId === ownerFilter) : rows;
+
+  const totals = visibleRows?.reduce(
     (acc, r) => ({ assignados: acc.assignados + r.assignados, atendidos: acc.atendidos + r.atendidos, pendientes: acc.pendientes + r.pendientes, citas: acc.citas + r.citas }),
     { assignados: 0, atendidos: 0, pendientes: 0, citas: 0 },
   );
@@ -128,17 +128,26 @@ export default function Setters() {
 
   return (
     <div className="roi-in flex flex-col gap-4">
-      <RangePicker
-        range={range}
-        from={from}
-        to={to}
-        loading={loading}
-        onChange={(r, f, t) => {
-          setRange(r);
-          setFrom(f);
-          setTo(t);
-        }}
-      />
+      <LaunchPhaseSelector locationId={locationId} onChange={setWindow} />
+
+      {rows && rows.length > 0 && (
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Setter</span>
+          <select
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+            className="rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+          >
+            <option value="">Todos</option>
+            {rows.map((r) => (
+              <option key={r.ownerGhlId} value={r.ownerGhlId}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          {loading && <span className="text-[12px] text-gray-500">Cargando…</span>}
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -180,14 +189,14 @@ export default function Setters() {
               </tr>
             </thead>
             <tbody>
-              {rows?.length === 0 && (
+              {(!visibleRows || visibleRows.length === 0) && (
                 <tr>
                   <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
-                    Sin chats asignados en este rango todavía.
+                    Sin setters con datos en este rango todavía.
                   </td>
                 </tr>
               )}
-              {rows?.map((r) => (
+              {visibleRows?.map((r) => (
                 <Fragment key={r.ownerGhlId}>
                   <tr className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">
                     <td className="px-4 py-3 font-semibold">{r.name}</td>
@@ -216,10 +225,10 @@ export default function Setters() {
                       </button>
                     </td>
                   </tr>
-                  {expandedOwner === r.ownerGhlId && locationId && (
+                  {expandedOwner === r.ownerGhlId && locationId && window_ && (
                     <tr>
                       <td colSpan={8} className="border-t border-[#1e1e23] bg-card p-0">
-                        <DetailPanel locationId={locationId} ownerGhlId={r.ownerGhlId} from={from} to={to} />
+                        <DetailPanel locationId={locationId} ownerGhlId={r.ownerGhlId} from={window_.from} to={window_.to} />
                       </td>
                     </tr>
                   )}

@@ -1,23 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../lib/api';
-import { formatCurrency, formatDate, formatNumber, formatPct } from '../lib/format';
+import { formatCurrency, formatNumber, formatPct } from '../lib/format';
+import LaunchPhaseSelector, { type LaunchWindow } from '../components/LaunchPhaseSelector';
 import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
-
-interface Launch {
-  id: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-}
-
-interface Phase {
-  id: string;
-  label: string;
-  startDate: string;
-  endDate: string;
-}
 
 interface FunnelStage {
   pipelineStageId: string | null;
@@ -35,47 +22,19 @@ interface OperationalKpis {
 
 export default function Embudo() {
   const { locationId } = useOutletContext<OutletContext>();
-  const [launches, setLaunches] = useState<Launch[] | null>(null);
-  const [launchId, setLaunchId] = useState<string | null>(null);
-  const [phases, setPhases] = useState<Phase[]>([]);
-  const [phaseId, setPhaseId] = useState<string | null>(null);
+  const [window_, setWindow] = useState<LaunchWindow | null>(null);
   const [funnel, setFunnel] = useState<FunnelStage[] | null>(null);
   const [kpis, setKpis] = useState<OperationalKpis | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!locationId) return;
-    let cancelled = false;
-    apiGet<{ launches: Launch[] }>(`/api/launches?locationId=${locationId}`).then((res) => {
-      if (cancelled) return;
-      setLaunches(res.launches);
-      setLaunchId((prev) => (prev && res.launches.some((l) => l.id === prev) ? prev : (res.launches[0]?.id ?? null)));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [locationId]);
-
-  useEffect(() => {
-    setPhaseId(null);
-    setPhases([]);
-    if (!launchId) return;
-    apiGet<{ phases: Phase[] }>(`/api/launches/${launchId}/phases`).then((res) => setPhases(res.phases));
-  }, [launchId]);
-
-  const activeLaunch = launches?.find((l) => l.id === launchId);
-  const activePhase = phases.find((p) => p.id === phaseId);
-  const from = activePhase?.startDate ?? activeLaunch?.startDate;
-  const to = activePhase?.endDate ?? activeLaunch?.endDate;
-
-  useEffect(() => {
-    if (!locationId || !from || !to) {
+    if (!locationId || !window_) {
       setFunnel(null);
       setKpis(null);
       return;
     }
     let cancelled = false;
-    const qs = `locationId=${locationId}&from=${from}&to=${to}`;
+    const qs = `locationId=${locationId}&from=${window_.from}&to=${window_.to}`;
     Promise.all([apiGet<{ stages: FunnelStage[] }>(`/api/kpis/funnel?${qs}`), apiGet<OperationalKpis>(`/api/kpis/operational?${qs}`)])
       .then(([f, k]) => {
         if (cancelled) return;
@@ -86,66 +45,16 @@ export default function Embudo() {
     return () => {
       cancelled = true;
     };
-  }, [locationId, from, to]);
+  }, [locationId, window_]);
 
   const top = funnel?.[0]?.count || 1;
   const worst = funnel && funnel.length > 1 ? [...funnel].sort((a, b) => a.percentageOfTotalPct - b.percentageOfTotalPct)[0] : null;
-  const noLaunchesYet = locationId && launches !== null && launches.length === 0;
 
   if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">
-      {noLaunchesYet && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm">
-          <span className="text-amber-300">Todavía no hay ningún lanzamiento creado — el embudo está en 0.</span>
-          <Link to="/app/settings" className="shrink-0 rounded border border-amber-700 px-3 py-1.5 text-amber-200 hover:bg-amber-900/40">
-            Ir a Configuración
-          </Link>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={launchId ?? ''}
-          onChange={(e) => setLaunchId(e.target.value || null)}
-          disabled={!launches?.length}
-          className="rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60 disabled:opacity-50"
-        >
-          {!launches?.length && <option>Sin lanzamientos</option>}
-          {launches?.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        {from && to && (
-          <span className="text-[12px] text-gray-500">
-            {formatDate(from)} → {formatDate(to)}
-          </span>
-        )}
-      </div>
-
-      {phases.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Fase</span>
-          <button
-            onClick={() => setPhaseId(null)}
-            className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold ${phaseId === null ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border2 text-gray-400 hover:bg-white/5'}`}
-          >
-            Todo el lanzamiento
-          </button>
-          {phases.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPhaseId(p.id)}
-              className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold ${phaseId === p.id ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border2 text-gray-400 hover:bg-white/5'}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <LaunchPhaseSelector locationId={locationId} onChange={setWindow} />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

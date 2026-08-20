@@ -2,15 +2,9 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../../lib/api';
 import { formatCurrency, formatDate, formatNumber } from '../../lib/format';
+import LaunchPhaseSelector, { type LaunchWindow } from '../../components/LaunchPhaseSelector';
 import NoLocationState from '../../components/NoLocationState';
 import type { OutletContext } from '../AppLayout';
-
-interface Launch {
-  id: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-}
 
 interface HotmartConnectionStatus {
   connected: boolean;
@@ -57,8 +51,7 @@ const STATUS_COLOR: Record<string, string> = {
 export default function VentasHotmart() {
   const { locationId } = useOutletContext<OutletContext>();
   const [connection, setConnection] = useState<HotmartConnectionStatus | null>(null);
-  const [launches, setLaunches] = useState<Launch[] | null>(null);
-  const [launchId, setLaunchId] = useState<string | null>(null);
+  const [window_, setWindow] = useState<LaunchWindow | null>(null);
   const [summary, setSummary] = useState<HotmartSummary | null>(null);
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
@@ -68,27 +61,19 @@ export default function VentasHotmart() {
   useEffect(() => {
     if (!locationId) return;
     apiGet<HotmartConnectionStatus>(`/api/hotmart/connection?locationId=${locationId}`).then(setConnection);
-    apiGet<{ launches: Launch[] }>(`/api/launches?locationId=${locationId}`).then((res) => {
-      setLaunches(res.launches);
-      setLaunchId((prev) => (prev && res.launches.some((l) => l.id === prev) ? prev : (res.launches[0]?.id ?? null)));
-    });
   }, [locationId]);
 
-  const activeLaunch = launches?.find((l) => l.id === launchId);
-  const from = activeLaunch?.startDate;
-  const to = activeLaunch?.endDate;
+  useEffect(() => {
+    if (!locationId || !window_) return;
+    apiGet<HotmartSummary>(`/api/hotmart/summary?locationId=${locationId}&from=${window_.from}&to=${window_.to}`).then(setSummary);
+  }, [locationId, window_]);
 
   useEffect(() => {
-    if (!locationId || !from || !to) return;
-    apiGet<HotmartSummary>(`/api/hotmart/summary?locationId=${locationId}&from=${from}&to=${to}`).then(setSummary);
-  }, [locationId, from, to]);
-
-  useEffect(() => {
-    if (!locationId || !from || !to) return;
+    if (!locationId || !window_) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const qs = `locationId=${locationId}&from=${from}&to=${to}&pageSize=100${statusFilter ? `&status=${statusFilter}` : ''}`;
+    const qs = `locationId=${locationId}&from=${window_.from}&to=${window_.to}&pageSize=100${statusFilter ? `&status=${statusFilter}` : ''}`;
     apiGet<{ items: SaleRow[] }>(`/api/hotmart/sales?${qs}`)
       .then((res) => !cancelled && setSales(res.items))
       .catch(() => !cancelled && setError('No se pudieron cargar las ventas.'))
@@ -96,31 +81,15 @@ export default function VentasHotmart() {
     return () => {
       cancelled = true;
     };
-  }, [locationId, from, to, statusFilter]);
+  }, [locationId, window_, statusFilter]);
 
   if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">
+      <LaunchPhaseSelector locationId={locationId} onChange={setWindow} />
+
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={launchId ?? ''}
-          onChange={(e) => setLaunchId(e.target.value || null)}
-          disabled={!launches?.length}
-          className="rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60 disabled:opacity-50"
-        >
-          {!launches?.length && <option>Sin lanzamientos</option>}
-          {launches?.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        {from && to && (
-          <span className="text-[12px] text-gray-500">
-            {formatDate(from)} → {formatDate(to)}
-          </span>
-        )}
         <span
           className="ml-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold"
           style={{ background: connection?.webhookConnected ? '#34d39922' : '#f59e0b22', color: connection?.webhookConnected ? '#34d399' : '#f59e0b' }}

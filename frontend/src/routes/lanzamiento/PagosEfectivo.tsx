@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../../lib/api';
 import { formatCurrency, formatDate, formatNumber } from '../../lib/format';
+import LaunchPhaseSelector, { type LaunchWindow } from '../../components/LaunchPhaseSelector';
 import NoLocationState from '../../components/NoLocationState';
 import type { OutletContext } from '../AppLayout';
 
@@ -24,23 +25,27 @@ function hoursSince(dateStr: string | null): number | null {
 
 export default function PagosEfectivo() {
   const { locationId } = useOutletContext<OutletContext>();
+  const [window_, setWindow] = useState<LaunchWindow | null>(null);
   const [sales, setSales] = useState<SaleRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!locationId) return;
+    if (!locationId || !window_) {
+      setSales(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiGet<{ items: SaleRow[] }>(`/api/hotmart/sales?locationId=${locationId}&status=BILLET_PRINTED&pageSize=200`)
+    apiGet<{ items: SaleRow[] }>(`/api/hotmart/sales?locationId=${locationId}&from=${window_.from}&to=${window_.to}&status=BILLET_PRINTED&pageSize=200`)
       .then((res) => !cancelled && setSales(res.items))
       .catch(() => !cancelled && setError('No se pudieron cargar los tickets pendientes.'))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [locationId]);
+  }, [locationId, window_]);
 
   if (!locationId) return <NoLocationState />;
 
@@ -50,6 +55,7 @@ export default function PagosEfectivo() {
 
   return (
     <div className="roi-in flex flex-col gap-4">
+      <LaunchPhaseSelector locationId={locationId} onChange={setWindow} />
       <p className="text-[12.5px] text-gray-500">
         Tickets/boletos de Hotmart generados (pago en efectivo/transferencia) que todavía no se confirmaron aprobados —
         el comprador tiene normalmente {WINDOW_HOURS}h para pagarlos antes de que Hotmart los venza.

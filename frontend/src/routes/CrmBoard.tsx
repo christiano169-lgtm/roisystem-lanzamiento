@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { apiGet, apiPost } from '../lib/api';
 import { formatCurrency, formatDate } from '../lib/format';
+import LaunchPhaseSelector, { type LaunchWindow } from '../components/LaunchPhaseSelector';
 import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
@@ -31,8 +32,10 @@ function tagColor(name: string) {
 
 export default function CrmBoard() {
   const { locationId } = useOutletContext<OutletContext>();
+  const [window_, setWindow] = useState<LaunchWindow | null>(null);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [owners, setOwners] = useState<GhlUser[]>([]);
+  const [ownerFilter, setOwnerFilter] = useState('');
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -46,12 +49,16 @@ export default function CrmBoard() {
   }, [locationId]);
 
   useEffect(() => {
-    if (!locationId) return;
+    if (!locationId || !window_) {
+      setContacts([]);
+      setTotal(0);
+      return;
+    }
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setLoading(true);
       setError(null);
-      const qs = `locationId=${locationId}&pageSize=100${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}`;
+      const qs = `locationId=${locationId}&from=${window_!.from}&to=${window_!.to}&pageSize=100${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}`;
       try {
         const res = await apiGet<{ items: ContactRow[]; total: number }>(`/api/contacts?${qs}`);
         if (!cancelled) {
@@ -68,7 +75,9 @@ export default function CrmBoard() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [locationId, search]);
+  }, [locationId, window_, search]);
+
+  const visibleContacts = ownerFilter ? contacts.filter((c) => c.ownerGhlId === ownerFilter) : contacts;
 
   async function syncNow() {
     if (!locationId) return;
@@ -93,6 +102,8 @@ export default function CrmBoard() {
 
   return (
     <div className="roi-in flex flex-col gap-4">
+      <LaunchPhaseSelector locationId={locationId} onChange={setWindow} />
+
       <div className="flex flex-wrap items-center gap-3">
         <input
           value={search}
@@ -100,6 +111,18 @@ export default function CrmBoard() {
           placeholder="Buscar por nombre, teléfono o email…"
           className="w-72 rounded-md border border-border2 bg-input px-3.5 py-2.5 text-sm outline-none focus:border-accent/60"
         />
+        <select
+          value={ownerFilter}
+          onChange={(e) => setOwnerFilter(e.target.value)}
+          className="rounded-md border border-border2 bg-input px-3 py-2.5 text-sm outline-none focus:border-accent/60"
+        >
+          <option value="">Todos los asesores</option>
+          {owners.map((o) => (
+            <option key={o.ghlUserId} value={o.ghlUserId}>
+              {o.name}
+            </option>
+          ))}
+        </select>
         <span className="text-[12px] text-gray-500">{total} contactos</span>
         {loading && <span className="text-[12px] text-gray-500">Cargando…</span>}
         <button
@@ -127,14 +150,14 @@ export default function CrmBoard() {
             </tr>
           </thead>
           <tbody>
-            {contacts.length === 0 && !loading && (
+            {visibleContacts.length === 0 && !loading && (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
-                  {search ? 'Sin resultados para esa búsqueda.' : 'Sin contactos sincronizados todavía.'}
+                  {search ? 'Sin resultados para esa búsqueda.' : 'Sin contactos en este rango todavía.'}
                 </td>
               </tr>
             )}
-            {contacts.map((c) => {
+            {visibleContacts.map((c) => {
               const latestOpp = c.opportunities[0];
               return (
                 <tr key={c.id} className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">

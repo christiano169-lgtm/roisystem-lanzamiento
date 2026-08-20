@@ -85,8 +85,15 @@ export async function getSettersSummary(locationId: string, filters: SetterFilte
     qualityByOwner.set(q.ownerGhlId, list);
   }
 
-  return Array.from(byOwner.entries())
-    .map(([ownerGhlId, acc]) => {
+  // Show every GHL user who could plausibly be a setter/closer, not only
+  // the ones with conversations in this window — a setter getting zero
+  // leads assigned is exactly the kind of gap this screen needs to surface,
+  // not hide by omission.
+  const allOwnerIds = new Set([...ghlUsers.map((u) => u.ghlUserId), ...byOwner.keys()]);
+
+  return Array.from(allOwnerIds)
+    .map((ownerGhlId) => {
+      const acc = byOwner.get(ownerGhlId) ?? { assignados: 0, atendidos: 0, lags: [] as number[] };
       const quality = qualityByOwner.get(ownerGhlId);
       return {
         ownerGhlId,
