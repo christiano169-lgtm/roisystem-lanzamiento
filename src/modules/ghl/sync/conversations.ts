@@ -57,6 +57,13 @@ export const conversationsSyncer: EntitySyncer = {
       const { messageCount, lastMessageAt } = await syncMessages(tenantId, locationId, ghlLocationId, row.id, conversation.id);
       if (lastMessageAt) lastDateAdded = lastMessageAt;
 
+      // One extra GHL request per conversation (~100/page) is enough to
+      // trigger burst throttling that contacts/opportunities (1 request/page)
+      // never hit — see ghlLocationRequest's retry/backoff comment. Spacing
+      // requests out keeps the sustained rate low enough that retries are
+      // rarely needed at all.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
       // Only worth analyzing once there's something to read; re-syncing an
       // already-analyzed conversation with no new messages would just
       // re-queue the same (deduplicated, see enqueueQualityAnalysis) job.

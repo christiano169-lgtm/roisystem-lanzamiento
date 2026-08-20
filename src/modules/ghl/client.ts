@@ -22,6 +22,22 @@ async function getLocationPit(tenantId: string, ghlLocationId: string): Promise<
   return decryptToken(location.ghlPitCipher);
 }
 
+const RETRYABLE_STATUSES = new Set([401, 429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 4;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Long-running syncs (conversations.ts in particular, ~100 GHL requests per
+ * page) hit sustained 401/500 bursts from GHL's edge layer under load even
+ * though the PIT itself is valid — confirmed 2026-08-20 against production
+ * sync_jobs: contacts/opportunities (1 request/page) never fail, conversations
+ * (~101 requests/page) fails with 401 every run, at a variable record count
+ * that tracks request volume, not elapsed time (rules out token expiry).
+ * Retrying with backoff absorbs that burst throttling.
+ */
 export async function ghlLocationRequest<T>(
   tenantId: string,
   ghlLocationId: string,
@@ -29,17 +45,29 @@ export async function ghlLocationRequest<T>(
 ): Promise<T> {
   const accessToken = await getLocationPit(tenantId, ghlLocationId);
 
-  const response = await axios.request<T>({
-    baseURL: env.GHL_API_BASE_URL,
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Version: GHL_API_VERSION,
-      Accept: 'application/json',
-      ...options.headers,
-    },
-  });
-  return response.data;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await axios.request<T>({
+        baseURL: env.GHL_API_BASE_URL,
+        ...options,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Version: GHL_API_VERSION,
+          Accept: 'application/json',
+          ...options.headers,
+        },
+      });
+      return response.data;
+    } catch (err) {
+      lastError = err;
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      const retryable = status ? RETRYABLE_STATUSES.has(status) : axios.isAxiosError(err) && !err.response;
+      if (!retryable || attempt === MAX_ATTEMPTS) throw err;
+      await sleep(500 * 2 ** (attempt - 1));
+    }
+  }
+  throw lastError;
 }
 
 export function ghlLocationGet<T>(
