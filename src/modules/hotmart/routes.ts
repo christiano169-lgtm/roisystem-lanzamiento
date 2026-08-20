@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { assertOwnedLocation } from '../../lib/authz.js';
+import { prisma } from '../../db/prisma.js';
 import { deleteHotmartConnection, getHotmartConnection, saveHotmartConnection, saveHotmartWebhookHottok } from './connectionService.js';
 import { getHotmartSummary } from './service.js';
 import { createHotmartOffer, deleteHotmartOffer, listHotmartOffers } from './offers.js';
@@ -135,6 +136,42 @@ hotmartRouter.delete('/offers/:id', requireRole('admin'), async (req, res, next)
     const ok = await deleteHotmartOffer(q.locationId, req.params.id!);
     if (!ok) return res.status(404).json({ error: 'Offer not found' });
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+const salesListQuerySchema = z.object({
+  locationId: z.string().min(1),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  status: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+/** Individual-row list behind "Ventas Hotmart" — getHotmartSummary only aggregates approved sales, this backs the per-status tabs/table (Aprobadas, Pendientes, Reembolsos, etc.). */
+hotmartRouter.get('/sales', async (req, res, next) => {
+  try {
+    const q = salesListQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+
+    const where = {
+      locationId: q.locationId,
+      ...(q.from || q.to ? { purchaseDate: { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) } } : {}),
+      ...(q.status ? { status: q.status } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.hotmartSale.findMany({
+        where,
+        orderBy: { purchaseDate: 'desc' },
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      }),
+      prisma.hotmartSale.count({ where }),
+    ]);
+    res.json({ items, total, page: q.page, pageSize: q.pageSize });
   } catch (err) {
     next(err);
   }
