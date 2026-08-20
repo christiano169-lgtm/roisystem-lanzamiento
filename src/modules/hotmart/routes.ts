@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { assertOwnedLocation } from '../../lib/authz.js';
 import { deleteHotmartConnection, getHotmartConnection, saveHotmartConnection, saveHotmartWebhookHottok } from './connectionService.js';
 import { getHotmartSummary } from './service.js';
+import { createHotmartOffer, deleteHotmartOffer, listHotmartOffers } from './offers.js';
 import { enqueueHotmartSync } from '../../jobs/queue.js';
 
 export const hotmartRouter = Router();
@@ -94,6 +95,49 @@ const summaryQuerySchema = z.object({
   locationId: z.string().min(1),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+});
+
+const offersQuerySchema = z.object({ locationId: z.string().min(1) });
+
+hotmartRouter.get('/offers', async (req, res, next) => {
+  try {
+    const q = offersQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const offers = await listHotmartOffers(q.locationId);
+    res.json({ offers });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const createOfferSchema = z.object({
+  locationId: z.string().min(1),
+  name: z.string().min(1),
+  hotmartProductName: z.string().min(1),
+  offerType: z.enum(['general', 'vip', 'upgrade', 'order_bump']),
+});
+
+hotmartRouter.post('/offers', requireRole('admin'), async (req, res, next) => {
+  try {
+    const input = createOfferSchema.parse(req.body);
+    await assertOwnedLocation(req.auth!.tenantId, input.locationId);
+    const offer = await createHotmartOffer(input.locationId, input);
+    res.status(201).json({ offer });
+  } catch (err) {
+    next(err);
+  }
+});
+
+hotmartRouter.delete('/offers/:id', requireRole('admin'), async (req, res, next) => {
+  try {
+    const q = offersQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const ok = await deleteHotmartOffer(q.locationId, req.params.id!);
+    if (!ok) return res.status(404).json({ error: 'Offer not found' });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
 });
 
 hotmartRouter.get('/summary', async (req, res, next) => {

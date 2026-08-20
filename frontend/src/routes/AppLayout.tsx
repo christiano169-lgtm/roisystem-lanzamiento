@@ -32,7 +32,6 @@ const THEME_KEY = 'roisystem_theme';
 // as checkboxes when restricting an asesor's access (see User.allowedPages).
 export const NAV = [
   { to: '/app', label: 'Panel ejecutivo', icon: IconPanel, end: true },
-  { to: '/app/lanzamiento', label: 'Lanzamiento', icon: IconChart },
   { to: '/app/overview', label: 'Resumen', icon: IconChart },
   { to: '/app/me', label: 'Mi panel', icon: IconUser },
   { to: '/app/embudo', label: 'Embudo', icon: IconChart },
@@ -47,7 +46,6 @@ export const NAV = [
 
 const PAGE_META: Record<string, [string, string]> = {
   '/app': ['Panel ejecutivo', 'Vista ejecutiva · Todo en 1'],
-  '/app/lanzamiento': ['Lanzamiento', 'Ventas, embudo, asistencia y setters de un lanzamiento'],
   '/app/overview': ['Resumen', 'Vista general del embudo'],
   '/app/me': ['Mi panel', 'Tus métricas y leads'],
   '/app/embudo': ['Embudo', 'Entradas reales por etapa'],

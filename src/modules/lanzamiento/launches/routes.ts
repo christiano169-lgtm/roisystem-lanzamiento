@@ -6,10 +6,13 @@ import { prisma } from '../../../db/prisma.js';
 import {
   createAttendanceRule,
   createLaunch,
+  createLaunchPhase,
   deleteAttendanceRule,
   deleteLaunch,
+  deleteLaunchPhase,
   getLaunchSummary,
   listAttendanceRules,
+  listLaunchPhases,
   listLaunches,
   updateLaunch,
 } from './service.js';
@@ -98,13 +101,62 @@ launchesRouter.delete('/:id', requireRole('admin', 'manager'), async (req, res, 
   }
 });
 
+const summaryQuerySchema = z.object({ locationId: z.string().min(1), phaseId: z.string().min(1).optional() });
+
 launchesRouter.get('/:id/summary', async (req, res, next) => {
   try {
-    const q = listQuerySchema.parse(req.query);
+    const q = summaryQuerySchema.parse(req.query);
     await assertOwnedLocation(req.auth!.tenantId, q.locationId);
-    const summary = await getLaunchSummary(req.auth!.tenantId, q.locationId, req.params.id!);
+
+    let window: { from: Date; to: Date } | undefined;
+    if (q.phaseId) {
+      const phase = await prisma.launchPhase.findFirst({ where: { id: q.phaseId, launchId: req.params.id } });
+      if (!phase) return res.status(404).json({ error: 'Phase not found' });
+      window = { from: phase.startDate, to: phase.endDate };
+    }
+
+    const summary = await getLaunchSummary(req.auth!.tenantId, q.locationId, req.params.id!, window);
     if (!summary) return res.status(404).json({ error: 'Launch not found' });
     res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+});
+
+launchesRouter.get('/:id/phases', async (req, res, next) => {
+  try {
+    await assertOwnedLaunch(req.auth!.tenantId, req.params.id!);
+    const phases = await listLaunchPhases(req.params.id!);
+    res.json({ phases });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const phaseSchema = z.object({
+  label: z.string().min(1),
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+  position: z.number().int().optional(),
+});
+
+launchesRouter.post('/:id/phases', requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    await assertOwnedLaunch(req.auth!.tenantId, req.params.id!);
+    const input = phaseSchema.parse(req.body);
+    const phase = await createLaunchPhase(req.params.id!, { ...input, startDate: new Date(input.startDate), endDate: new Date(input.endDate) });
+    res.status(201).json({ phase });
+  } catch (err) {
+    next(err);
+  }
+});
+
+launchesRouter.delete('/:id/phases/:phaseId', requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    await assertOwnedLaunch(req.auth!.tenantId, req.params.id!);
+    const ok = await deleteLaunchPhase(req.params.id!, req.params.phaseId!);
+    if (!ok) return res.status(404).json({ error: 'Phase not found' });
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

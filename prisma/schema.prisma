@@ -198,6 +198,7 @@ model Location {
   metaAdInsights   MetaAdInsight[]
   hotmartConnection HotmartConnection?
   hotmartSales     HotmartSale[]
+  hotmartOffers    HotmartOffer[]
   launches         Launch[]
   forms            Form[]
   formSubmissions  FormSubmission[]
@@ -273,6 +274,32 @@ model HotmartConnection {
   @@map("hotmart_connections")
 }
 
+enum HotmartOfferType {
+  general
+  vip
+  upgrade
+  order_bump
+}
+
+// Hotmart's API has no "is this an upgrade/order bump" field — the admin
+// maps each of their own product names to a type here (Configuración →
+// Lanzamientos → Ofertas Hotmart) so the Panel ejecutivo can split
+// "Compras aprobadas" / "Upgrades a VIP" / "Order bumps" instead of one
+// undifferentiated sales count. Matched against HotmartSale.productName.
+model HotmartOffer {
+  id                 String           @id @default(cuid())
+  locationId         String
+  name               String
+  hotmartProductName String
+  offerType          HotmartOfferType
+  createdAt          DateTime         @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, hotmartProductName])
+  @@map("hotmart_offers")
+}
+
 model HotmartSale {
   id            String    @id @default(cuid())
   locationId    String
@@ -322,9 +349,28 @@ model Launch {
 
   location         Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
   attendanceRules  LaunchAttendanceRule[]
+  phases           LaunchPhase[]
 
   @@index([locationId, startDate])
   @@map("launches")
+}
+
+// Sub-windows inside a Launch (Early bird / Precio medio / Cierre de
+// carrito, etc.) — the Panel ejecutivo's phase tabs filter to one of these
+// instead of the whole launch. Purely a date sub-range, admin-defined per
+// launch (no fixed taxonomy — a client's launch might have 2 phases or 5).
+model LaunchPhase {
+  id        String   @id @default(cuid())
+  launchId  String
+  label     String
+  startDate DateTime
+  endDate   DateTime
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  launch Launch @relation(fields: [launchId], references: [id], onDelete: Cascade)
+
+  @@map("launch_phases")
 }
 
 enum AttendanceMatchType {

@@ -1229,6 +1229,100 @@ function AttendanceRulesEditor({ launch }: { launch: Launch }) {
   );
 }
 
+interface Phase {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+function PhasesEditor({ launch }: { launch: Launch }) {
+  const [phases, setPhases] = useState<Phase[]>([]);
+  const [form, setForm] = useState({ label: '', startDate: '', endDate: '' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function load() {
+    apiGet<{ phases: Phase[] }>(`/api/launches/${launch.id}/phases`).then((res) => setPhases(res.phases));
+  }
+
+  useEffect(load, [launch.id]);
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    if (!form.label.trim() || !form.startDate || !form.endDate) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiPost(`/api/launches/${launch.id}/phases`, {
+        label: form.label,
+        startDate: toDateTimeIso(form.startDate, false),
+        endDate: toDateTimeIso(form.endDate, true),
+        position: phases.length,
+      });
+      setForm({ label: '', startDate: '', endDate: '' });
+      load();
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'No se pudo agregar la fase.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(phaseId: string) {
+    await apiDelete(`/api/launches/${launch.id}/phases/${phaseId}`);
+    load();
+  }
+
+  return (
+    <div className="rounded-md border border-border2 bg-card p-3.5">
+      <span className="text-[11.5px] font-semibold text-gray-300">Fases — {launch.name}</span>
+      <p className="mb-3 mt-1 text-[11px] text-gray-500">
+        Ej: Early bird, Precio medio, Cierre de carrito. El Panel ejecutivo muestra una pestaña por fase para filtrar
+        ventas y embudo a ese rango exacto.
+      </p>
+      <div className="mb-3 flex flex-col gap-1.5">
+        {phases.map((p) => (
+          <div key={p.id} className="flex items-center gap-3 rounded border border-border2 bg-input px-3 py-2 text-[12.5px]">
+            <span className="w-32 shrink-0 font-semibold">{p.label}</span>
+            <span className="flex-1 text-gray-400">
+              {new Date(p.startDate).toLocaleDateString('es-CO')} → {new Date(p.endDate).toLocaleDateString('es-CO')}
+            </span>
+            <button onClick={() => remove(p.id)} className="text-[11px] text-gray-500 hover:text-red-400">
+              Eliminar
+            </button>
+          </div>
+        ))}
+        {phases.length === 0 && <p className="text-[11.5px] text-gray-500">Sin fases todavía.</p>}
+      </div>
+      <form onSubmit={add} className="flex flex-wrap items-end gap-2.5">
+        <input
+          value={form.label}
+          onChange={(e) => setForm({ ...form, label: e.target.value })}
+          placeholder="Ej: Early bird"
+          className="w-32 rounded border border-border2 bg-input px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
+        />
+        <input
+          type="date"
+          value={form.startDate}
+          onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+          className="rounded border border-border2 bg-input px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
+        />
+        <input
+          type="date"
+          value={form.endDate}
+          onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+          className="rounded border border-border2 bg-input px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent/60"
+        />
+        <button type="submit" disabled={saving} className="rounded border border-accent/40 px-3 py-1.5 text-[12px] font-bold text-accent disabled:opacity-60">
+          + Agregar fase
+        </button>
+      </form>
+      {message && <p className="mt-2 text-xs text-red-400">{message}</p>}
+    </div>
+  );
+}
+
 const LAUNCH_STATUS_LABEL: Record<Launch['status'], string> = { planned: 'Planeado', active: 'Activo', closed: 'Cerrado' };
 
 function LaunchesSection() {
@@ -1279,7 +1373,7 @@ function LaunchesSection() {
   return (
     <SectionCard
       title="Lanzamientos"
-      description="Cada lanzamiento tiene sus propias fechas — ventas, embudo, asistencia y gestión de setters se filtran a ese rango en /app/lanzamiento. Define aquí también qué tag o formulario de GHL marca la asistencia a cada clase."
+      description="Cada lanzamiento tiene sus propias fechas — el Panel ejecutivo se filtra a ese rango (y a cada fase, si definís alguna). Define aquí también qué tag o formulario de GHL marca la asistencia a cada clase."
     >
       <div className="mb-4 flex flex-col gap-2">
         {launches.map((l) => (
@@ -1304,14 +1398,15 @@ function LaunchesSection() {
                 onClick={() => setExpandedId((prev) => (prev === l.id ? null : l.id))}
                 className="text-[11px] text-accent hover:underline"
               >
-                {expandedId === l.id ? 'Ocultar reglas' : 'Reglas de asistencia'}
+                {expandedId === l.id ? 'Ocultar detalles' : 'Fases y asistencia'}
               </button>
               <button onClick={() => remove(l.id)} className="text-[11px] text-gray-500 hover:text-red-400">
                 Eliminar
               </button>
             </div>
             {expandedId === l.id && (
-              <div className="border-t border-border2 p-3.5">
+              <div className="flex flex-col gap-3 border-t border-border2 p-3.5">
+                <PhasesEditor launch={l} />
                 <AttendanceRulesEditor launch={l} />
               </div>
             )}
@@ -1356,6 +1451,114 @@ function LaunchesSection() {
   );
 }
 
+interface HotmartOffer {
+  id: string;
+  name: string;
+  hotmartProductName: string;
+  offerType: 'general' | 'vip' | 'upgrade' | 'order_bump';
+}
+
+const OFFER_TYPE_LABEL: Record<HotmartOffer['offerType'], string> = {
+  general: 'General',
+  vip: 'VIP',
+  upgrade: 'Upgrade',
+  order_bump: 'Order bump',
+};
+
+function HotmartOffersSection() {
+  const { locationId } = useOutletContext<OutletContext>();
+  const [offers, setOffers] = useState<HotmartOffer[]>([]);
+  const [form, setForm] = useState({ name: '', hotmartProductName: '', offerType: 'general' as HotmartOffer['offerType'] });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function load() {
+    apiGet<{ offers: HotmartOffer[] }>(`/api/hotmart/offers?locationId=${locationId}`).then((res) => setOffers(res.offers));
+  }
+
+  useEffect(load, [locationId]);
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.hotmartProductName.trim()) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiPost('/api/hotmart/offers', { locationId, ...form });
+      setForm({ name: '', hotmartProductName: '', offerType: 'general' });
+      load();
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'No se pudo agregar la oferta.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await apiDelete(`/api/hotmart/offers/${id}?locationId=${locationId}`);
+    load();
+  }
+
+  return (
+    <SectionCard
+      title="Ofertas Hotmart"
+      description="Hotmart no distingue qué producto es 'la oferta general' vs. un upgrade a VIP o un order bump — mapealo acá para que el Panel ejecutivo separe compras, upgrades y order bumps en vez de contarlo todo junto. El nombre del producto debe coincidir exactamente con el que llega de Hotmart (visible en Ventas Hotmart una vez sincronizado)."
+    >
+      <div className="mb-4 flex flex-col gap-1.5">
+        {offers.map((o) => (
+          <div key={o.id} className="flex items-center gap-3 rounded-md border border-border2 bg-card px-3.5 py-2.5 text-[12.5px]">
+            <span className="w-40 shrink-0 truncate font-semibold">{o.name}</span>
+            <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] uppercase text-gray-400">{OFFER_TYPE_LABEL[o.offerType]}</span>
+            <span className="flex-1 truncate font-mono text-accent">{o.hotmartProductName}</span>
+            <button onClick={() => remove(o.id)} className="text-[11px] text-gray-500 hover:text-red-400">
+              Eliminar
+            </button>
+          </div>
+        ))}
+        {offers.length === 0 && <p className="text-[12px] text-gray-500">Sin ofertas mapeadas — todas las ventas se cuentan como "General" por ahora.</p>}
+      </div>
+      <form onSubmit={add} className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Nombre interno</label>
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Ej: VIP con bonos"
+            className="w-44 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Tipo</label>
+          <select
+            value={form.offerType}
+            onChange={(e) => setForm({ ...form, offerType: e.target.value as HotmartOffer['offerType'] })}
+            className="rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+          >
+            {(Object.keys(OFFER_TYPE_LABEL) as HotmartOffer['offerType'][]).map((t) => (
+              <option key={t} value={t}>
+                {OFFER_TYPE_LABEL[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Nombre del producto en Hotmart</label>
+          <input
+            value={form.hotmartProductName}
+            onChange={(e) => setForm({ ...form, hotmartProductName: e.target.value })}
+            placeholder="Team Management Week VIP"
+            className="w-64 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+          />
+        </div>
+        <button type="submit" disabled={saving} className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
+          {saving ? 'Guardando…' : '+ Agregar oferta'}
+        </button>
+      </form>
+      {message && <p className="mt-2 text-xs text-red-400">{message}</p>}
+    </SectionCard>
+  );
+}
+
 const WIZARD_STEPS = [
   { id: 'conexion', label: 'Conexión GHL' },
   { id: 'equipo', label: 'Equipo y asesores' },
@@ -1393,7 +1596,12 @@ export default function Settings() {
       <div className="flex flex-col gap-4">
         {step === 'conexion' && <ConnectionSection />}
         {step === 'equipo' && isAdmin && <TeamSection />}
-        {step === 'lanzamientos' && (isAdmin || user?.role === 'manager') && <LaunchesSection />}
+        {step === 'lanzamientos' && (isAdmin || user?.role === 'manager') && (
+          <>
+            <LaunchesSection />
+            <HotmartOffersSection />
+          </>
+        )}
         {step === 'ia' && isAdmin && (
           <>
             <OpenAiKeySection />

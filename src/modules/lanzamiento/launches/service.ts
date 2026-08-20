@@ -2,6 +2,7 @@ import { prisma } from '../../../db/prisma.js';
 import type { AttendanceMatchType, LaunchStatus } from '@prisma/client';
 import { getFunnel, getOperationalKpis } from '../../kpis/service.js';
 import { getHotmartSummary } from '../../hotmart/service.js';
+import { getLaunchSalesKpis, getLaunchSalesRanking, getLaunchSalesVolume, type LaunchSalesKpis, type SalesRankingRow, type SalesVolumeRow } from '../../hotmart/launchSales.js';
 import { getSettersSummary } from '../setters/service.js';
 import type { FunnelStage } from '../../kpis/types.js';
 
@@ -81,6 +82,30 @@ export async function deleteAttendanceRule(launchId: string, ruleId: string) {
   return true;
 }
 
+export interface LaunchPhaseInput {
+  label: string;
+  startDate: Date;
+  endDate: Date;
+  position?: number;
+}
+
+export function listLaunchPhases(launchId: string) {
+  return prisma.launchPhase.findMany({ where: { launchId }, orderBy: { position: 'asc' } });
+}
+
+export function createLaunchPhase(launchId: string, input: LaunchPhaseInput) {
+  return prisma.launchPhase.create({
+    data: { launchId, label: input.label, startDate: input.startDate, endDate: input.endDate, position: input.position ?? 0 },
+  });
+}
+
+export async function deleteLaunchPhase(launchId: string, phaseId: string) {
+  const phase = await prisma.launchPhase.findFirst({ where: { id: phaseId, launchId } });
+  if (!phase) return false;
+  await prisma.launchPhase.delete({ where: { id: phaseId } });
+  return true;
+}
+
 export interface AttendanceRow {
   ruleId: string;
   label: string;
@@ -138,6 +163,7 @@ async function getAttendanceSummary(locationId: string, launch: { id: string; st
 
 export interface LaunchSummary {
   launch: { id: string; name: string; startDate: Date; endDate: Date; status: LaunchStatus };
+  phases: Array<{ id: string; label: string; startDate: Date; endDate: Date }>;
   ventas: {
     ingresos: number;
     efectivoCobrado: number;
@@ -145,34 +171,51 @@ export interface LaunchSummary {
     wonCount: number;
     hotmart: { revenue: number; salesCount: number; averageTicket: number; byProduct: Array<{ productName: string; revenue: number; salesCount: number }> };
   };
+  embudoVentas: { cerrada: number; ofertada: number; noOfertada: number };
+  salesKpis: LaunchSalesKpis;
+  salesVolume: SalesVolumeRow[];
+  salesRanking: SalesRankingRow[];
   funnel: FunnelStage[];
   asistencia: AttendanceRow[];
   setters: Awaited<ReturnType<typeof getSettersSummary>>;
 }
 
 /**
- * The unified "un solo lugar" view the launch dashboard reads from — ventas
+ * The unified "un solo lugar" view the Panel ejecutivo reads from — ventas
  * (Opportunity + Hotmart, deliberately excluding manual Payment per the
  * client's call), funnel, class attendance, and setter chat management, all
- * scoped to this launch's date window instead of the subaccount's whole
- * lifetime.
+ * scoped to a window inside this launch. Pass `window` to narrow to one
+ * LaunchPhase (Early bird, etc.) instead of the whole launch — the caller
+ * resolves which phase's dates those are.
  */
-export async function getLaunchSummary(tenantId: string, locationId: string, launchId: string): Promise<LaunchSummary | null> {
+export async function getLaunchSummary(
+  tenantId: string,
+  locationId: string,
+  launchId: string,
+  window?: { from: Date; to: Date },
+): Promise<LaunchSummary | null> {
   const launch = await prisma.launch.findFirst({ where: { id: launchId, locationId } });
   if (!launch) return null;
 
-  const filters = { from: launch.startDate, to: launch.endDate };
+  const from = window?.from ?? launch.startDate;
+  const to = window?.to ?? launch.endDate;
+  const filters = { from, to };
 
-  const [operational, funnel, hotmart, asistencia, setters] = await Promise.all([
+  const [operational, funnel, hotmart, asistencia, setters, phases, salesKpis, salesVolume, salesRanking] = await Promise.all([
     getOperationalKpis(tenantId, locationId, filters),
     getFunnel(tenantId, locationId, filters),
-    getHotmartSummary(locationId, launch.startDate, launch.endDate),
+    getHotmartSummary(locationId, from, to),
     getAttendanceSummary(locationId, launch),
     getSettersSummary(locationId, filters),
+    listLaunchPhases(launch.id),
+    getLaunchSalesKpis(locationId, from, to),
+    getLaunchSalesVolume(locationId, from, to),
+    getLaunchSalesRanking(locationId, from, to),
   ]);
 
   return {
     launch: { id: launch.id, name: launch.name, startDate: launch.startDate, endDate: launch.endDate, status: launch.status },
+    phases: phases.map((p) => ({ id: p.id, label: p.label, startDate: p.startDate, endDate: p.endDate })),
     ventas: {
       ingresos: operational.ingresos,
       efectivoCobrado: operational.efectivoCobrado,
@@ -180,6 +223,10 @@ export async function getLaunchSummary(tenantId: string, locationId: string, lau
       wonCount: operational.wonCount,
       hotmart,
     },
+    embudoVentas: { cerrada: operational.wonCount, ofertada: operational.ofertadaCount, noOfertada: operational.noOfertadaCount },
+    salesKpis,
+    salesVolume,
+    salesRanking,
     funnel,
     asistencia,
     setters,

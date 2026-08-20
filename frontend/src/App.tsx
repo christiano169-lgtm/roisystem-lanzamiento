@@ -9,7 +9,6 @@ import Payments from './routes/Payments';
 import Overview from './routes/Overview';
 import CrmBoard from './routes/CrmBoard';
 import Setters from './routes/lanzamiento/Setters';
-import LaunchDashboard from './routes/lanzamiento/LaunchDashboard';
 import Bandeja from './routes/Bandeja';
 import MyPanel from './routes/MyPanel';
 import Documentacion from './routes/Documentacion';
@@ -47,7 +46,6 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="overview" element={<Overview />} />
         <Route path="crm" element={<CrmBoard />} />
-        <Route path="lanzamiento" element={<LaunchDashboard />} />
         <Route path="setters" element={<Setters />} />
         <Route path="bandeja" element={<Bandeja />} />
         <Route path="me" element={<MyPanel />} />

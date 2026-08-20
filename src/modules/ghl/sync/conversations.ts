@@ -16,10 +16,17 @@ interface GhlConversationsResponse {
   total: number;
 }
 
+// Confirmed against a live account (2026-08-20): GET /conversations/{id}/messages
+// wraps the array one level deeper than GhlConversationsResponse — the top-level
+// `messages` key is an object (`{ lastMessageId, nextPage, messages: [...] }`),
+// not the array itself. Easy to miss since GHL's other list endpoints
+// (contacts, conversations/search) put the array at the top level.
 interface GhlMessagesResponse {
-  messages: GhlMessage[];
-  lastMessageId?: string;
-  nextPage?: boolean;
+  messages: {
+    messages: GhlMessage[];
+    lastMessageId?: string;
+    nextPage?: boolean;
+  };
 }
 
 // Confirmed against github.com/GoHighLevel/highlevel-api-docs
@@ -100,11 +107,12 @@ async function syncMessages(
     `/conversations/${ghlConversationId}/messages`,
     { limit: MESSAGES_PER_CONVERSATION },
   );
+  const messages = data.messages?.messages ?? [];
 
   let lastOutboundOwner: string | null = null;
   let lastMessageAt: number | undefined;
 
-  for (const message of data.messages) {
+  for (const message of messages) {
     await prisma.message.upsert({
       where: { conversationId_ghlId: { conversationId, ghlId: message.id ?? message.messageId! } },
       create: {
@@ -145,7 +153,7 @@ async function syncMessages(
     });
   }
 
-  return { messageCount: data.messages.length, lastMessageAt };
+  return { messageCount: messages.length, lastMessageAt };
 }
 
 export { upsertConversation };
