@@ -1,5 +1,11 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local dev (macOS); the musl target is needed to run
+  // Prisma's query engine on the Alpine (musl libc) image the production
+  // Dockerfile uses — without it the container fails at boot with
+  // "Could not parse schema engine response" (missing/mismatched engine
+  // binary for Alpine's OpenSSL 3).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
