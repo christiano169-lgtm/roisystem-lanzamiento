@@ -17,13 +17,15 @@ const listQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+const contactsQuerySchema = listQuerySchema.extend({ q: z.string().min(1).optional() });
+
 function paginate(page: number, pageSize: number) {
   return { skip: (page - 1) * pageSize, take: pageSize };
 }
 
 dataRouter.get('/contacts', async (req, res, next) => {
   try {
-    const q = listQuerySchema.parse(req.query);
+    const q = contactsQuerySchema.parse(req.query);
     await assertOwnedLocation(req.auth!.tenantId, q.locationId);
 
     const where = {
@@ -31,12 +33,26 @@ dataRouter.get('/contacts', async (req, res, next) => {
       ...(q.from || q.to
         ? { ghlCreatedAt: { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) } }
         : {}),
+      // CRM search bar — matches the mockup's "buscador" over name/phone/email.
+      ...(q.q
+        ? {
+            OR: [
+              { firstName: { contains: q.q, mode: 'insensitive' as const } },
+              { lastName: { contains: q.q, mode: 'insensitive' as const } },
+              { phone: { contains: q.q, mode: 'insensitive' as const } },
+              { email: { contains: q.q, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
     };
 
     const [items, total] = await Promise.all([
       prisma.contact.findMany({
         where,
-        include: { opportunities: { orderBy: { ghlCreatedAt: 'desc' }, take: 1, include: { pipelineStage: true } } },
+        include: {
+          opportunities: { orderBy: { ghlCreatedAt: 'desc' }, take: 1, include: { pipelineStage: true } },
+          tags: { include: { tag: true } },
+        },
         orderBy: { ghlCreatedAt: 'desc' },
         ...paginate(q.page, q.pageSize),
       }),
