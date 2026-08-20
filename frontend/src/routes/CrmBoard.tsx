@@ -144,8 +144,8 @@ export default function CrmBoard() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
-                      {c.tags.length === 0 && <span className="text-gray-600">—</span>}
-                      {c.tags.map(({ tag }) => (
+                      {(c.tags ?? []).length === 0 && <span className="text-gray-600">—</span>}
+                      {(c.tags ?? []).map(({ tag }) => (
                         <span
                           key={tag.id}
                           className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"

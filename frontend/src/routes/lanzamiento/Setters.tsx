@@ -42,7 +42,9 @@ function DetailPanel({ locationId, ownerGhlId, from, to }: { locationId: string;
   useEffect(() => {
     let cancelled = false;
     const qs = `locationId=${locationId}&ownerGhlId=${encodeURIComponent(ownerGhlId)}&from=${toRangeParam(from, false)}&to=${toRangeParam(to, true)}`;
-    apiGet<{ detail: ConversationDetailRow[] }>(`/api/setters/detail?${qs}`).then((res) => !cancelled && setRows(res.detail));
+    apiGet<{ detail: ConversationDetailRow[] }>(`/api/setters/detail?${qs}`)
+      .then((res) => !cancelled && setRows(res.detail))
+      .catch(() => !cancelled && setRows([]));
     return () => {
       cancelled = true;
     };
