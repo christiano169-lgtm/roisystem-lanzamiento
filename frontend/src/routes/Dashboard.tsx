@@ -305,8 +305,13 @@ export default function Dashboard() {
         {locationId && (
           <ObjectionsWidget
             locationId={locationId}
-            from={currentRange?.startDate ?? new Date(0).toISOString()}
-            to={currentRange?.endDate ?? new Date().toISOString()}
+            // ObjectionsWidget expects a plain yyyy-mm-dd date (it appends
+            // its own time-of-day before parsing) — currentRange's dates are
+            // full ISO datetimes, so they need truncating or the parse blows
+            // up with "Invalid time value" (this crashed the whole page in
+            // production once real launch dates started flowing through).
+            from={(currentRange?.startDate ?? new Date(0).toISOString()).slice(0, 10)}
+            to={(currentRange?.endDate ?? new Date().toISOString()).slice(0, 10)}
           />
         )}
         <div className="rounded-[7px] border border-border bg-panel p-5">
