@@ -35,6 +35,17 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     return undefined as T;
   }
 
+  // An expired/invalid token leaves `roisystem_token` in localStorage, which
+  // makes useAuth().isAuthenticated stay true (it only checks presence, not
+  // validity) — every API call then silently 401s instead of bouncing back
+  // to login. Force it here so a stale session degrades to "log in again"
+  // instead of a confusing "couldn't load" error on every page.
+  if (response.status === 401 && path !== '/auth/login') {
+    localStorage.removeItem('roisystem_token');
+    localStorage.removeItem('roisystem_user');
+    window.location.href = '/login';
+  }
+
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
