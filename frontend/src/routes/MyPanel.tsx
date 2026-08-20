@@ -4,7 +4,6 @@ import { apiGet } from '../lib/api';
 import { daysAgoISODate, formatCurrency, formatMinutes, formatNumber, formatPct } from '../lib/format';
 import KpiCard from '../components/KpiCard';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
-import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface AdvisorPanelData {
@@ -110,8 +109,6 @@ export default function MyPanel() {
     const primaryPipeline = stages[0]?.pipelineName;
     return stages.filter((s) => s.pipelineName === primaryPipeline).sort((a, b) => a.position - b.position);
   }, [stages]);
-
-  if (!locationId) return <NoLocationState />;
 
   if (ghlUserId === undefined) return null;
 

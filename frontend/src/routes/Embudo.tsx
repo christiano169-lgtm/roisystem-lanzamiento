@@ -3,7 +3,6 @@ import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../lib/api';
 import { daysAgoISODate, formatCurrency, formatNumber, formatPct } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
-import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface FunnelStage {
@@ -54,8 +53,6 @@ export default function Embudo() {
 
   const top = funnel?.[0]?.count || 1;
   const worst = funnel && funnel.length > 1 ? [...funnel].sort((a, b) => a.percentageOfTotalPct - b.percentageOfTotalPct)[0] : null;
-
-  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

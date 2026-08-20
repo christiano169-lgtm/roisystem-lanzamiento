@@ -4,7 +4,6 @@ import { useAuth } from '../lib/auth';
 import { apiGet, apiPatch, ApiError } from '../lib/api';
 import { daysAgoISODate, formatCurrency } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
-import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface PipelineStage {
@@ -107,8 +106,6 @@ export default function CrmBoard() {
       setMoveError(err instanceof ApiError ? err.message : 'No se pudo mover la oportunidad en GHL.');
     }
   }
-
-  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">

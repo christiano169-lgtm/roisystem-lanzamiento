@@ -3,7 +3,6 @@ import { Link, useOutletContext } from 'react-router-dom';
 import { apiGet } from '../lib/api';
 import { formatDate, formatMinutes, formatNumber, formatUsd } from '../lib/format';
 import ObjectionsWidget from '../components/ObjectionsWidget';
-import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
 interface Launch {
@@ -201,12 +200,22 @@ export default function Dashboard() {
   const embudoVentas = summary?.embudoVentas ?? { cerrada: 0, ofertada: 0, noOfertada: 0 };
   const salesVolume = summary?.salesVolume ?? [];
   const salesRanking = summary?.salesRanking ?? [];
-  const noLaunchesYet = launches !== null && launches.length === 0;
-
-  if (!locationId) return <NoLocationState />;
+  const noLocation = !locationId;
+  const noLaunchesYet = !noLocation && launches !== null && launches.length === 0;
 
   return (
     <div className="roi-in flex flex-col gap-4">
+      {noLocation && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm">
+          <span className="text-amber-300">
+            Todavía no hay ninguna subcuenta de GHL conectada — lo de abajo está en 0. Conectala en Configuración → "Conexión GHL".
+          </span>
+          <Link to="/app/settings" className="shrink-0 rounded border border-amber-700 px-3 py-1.5 text-amber-200 hover:bg-amber-900/40">
+            Ir a Configuración
+          </Link>
+        </div>
+      )}
+
       {noLaunchesYet && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm">
           <span className="text-amber-300">

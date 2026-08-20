@@ -3,7 +3,6 @@ import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../../lib/api';
 import { daysAgoISODate, formatMinutes, formatNumber } from '../../lib/format';
 import RangePicker, { type RangePreset } from '../../components/RangePicker';
-import NoLocationState from '../../components/NoLocationState';
 import type { OutletContext } from '../AppLayout';
 
 interface SetterRow {
@@ -62,8 +61,6 @@ export default function Setters() {
     (acc, r) => ({ assignados: acc.assignados + r.assignados, atendidos: acc.atendidos + r.atendidos, pendientes: acc.pendientes + r.pendientes, citas: acc.citas + r.citas }),
     { assignados: 0, atendidos: 0, pendientes: 0, citas: 0 },
   );
-
-  if (!locationId) return <NoLocationState />;
 
   return (
     <div className="roi-in flex flex-col gap-4">
