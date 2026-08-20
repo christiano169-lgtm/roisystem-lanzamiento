@@ -230,104 +230,12 @@ function StageAutomationSection() {
   );
 }
 
-interface MetaAdsConnectionStatus {
-  connected: boolean;
-  adAccountId: string | null;
-  lastSyncedAt: string | null;
-}
-
 interface HotmartConnectionStatus {
   connected: boolean;
   clientId: string | null;
   lastSyncedAt: string | null;
   webhookConnected: boolean;
   webhookUrl: string;
-}
-
-function MetaAdsSection() {
-  const { locationId } = useOutletContext<OutletContext>();
-  const [status, setStatus] = useState<MetaAdsConnectionStatus | null>(null);
-  const [adAccountId, setAdAccountId] = useState('');
-  const [accessToken, setAccessToken] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiGet<MetaAdsConnectionStatus>(`/api/meta-ads/connection?locationId=${locationId}`).then(setStatus);
-  }, [locationId]);
-
-  async function connect(e: FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setMessage(null);
-    try {
-      await apiPost('/api/meta-ads/connection', { locationId, adAccountId, accessToken });
-      setAccessToken('');
-      setStatus(await apiGet<MetaAdsConnectionStatus>(`/api/meta-ads/connection?locationId=${locationId}`));
-      setMessage('Meta Ads conectado.');
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : 'No se pudo conectar Meta Ads.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function disconnect() {
-    setSaving(true);
-    try {
-      await apiDelete(`/api/meta-ads/connection?locationId=${locationId}`);
-      setStatus({ connected: false, adAccountId: null, lastSyncedAt: null });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function syncNow() {
-    setSaving(true);
-    setMessage(null);
-    try {
-      await apiPost('/api/meta-ads/sync', { locationId });
-      setMessage('Sincronización de Meta Ads encolada.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <SectionCard
-      title="Meta Ads"
-      description="Conecta la cuenta publicitaria de esta subcuenta para ver inversión y leads de Facebook/Instagram Ads. Necesitas el ID de la cuenta (act_XXXXXXXXX) y un token de acceso de sistema (System User) con permiso ads_read, generado desde tu Business Manager."
-    >
-      <p className="mb-3 text-xs text-gray-400">
-        Estado: {status?.connected ? <span className="text-emerald-400">conectado ({status.adAccountId})</span> : <span className="text-amber-400">sin conectar</span>}
-      </p>
-      {status?.connected ? (
-        <div className="flex gap-3">
-          <button onClick={syncNow} disabled={saving} className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
-            Sincronizar ahora
-          </button>
-          <button onClick={disconnect} disabled={saving} className="rounded-md border border-border2 px-4 py-2 text-sm hover:bg-card disabled:opacity-60">
-            Desconectar
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={connect} className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">ID de cuenta publicitaria</label>
-            <input required value={adAccountId} onChange={(e) => setAdAccountId(e.target.value)} placeholder="act_123456789" className="w-48 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Token de acceso (System User)</label>
-            <input type="password" required value={accessToken} onChange={(e) => setAccessToken(e.target.value)} className="w-64 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60" />
-          </div>
-          <button type="submit" disabled={saving} className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
-            {saving ? 'Conectando…' : 'Conectar'}
-          </button>
-        </form>
-      )}
-      {message && <p className="mt-2 text-xs text-gray-400">{message}</p>}
-    </SectionCard>
-  );
 }
 
 function HotmartSection() {
@@ -1308,7 +1216,6 @@ export default function Settings() {
         {step === 'disparadores' && (isAdmin || user?.role === 'manager') && <TriggersSection />}
         {step === 'integraciones' && (
           <>
-            {isAdmin && <MetaAdsSection />}
             {isAdmin && <HotmartSection />}
             <FathomSection />
           </>

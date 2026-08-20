@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { apiGet } from '../lib/api';
 import { daysAgoISODate, formatCurrency, formatMinutes, formatNumber, formatPct } from '../lib/format';
 import KpiCard from '../components/KpiCard';
@@ -370,11 +370,7 @@ export default function Dashboard() {
                 )}
                 {ranking.map((row) => (
                   <tr key={row.ownerGhlId} className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">
-                    <td className="px-4 py-3 font-semibold">
-                      <Link to={`/app/advisor/${row.ownerGhlId}`} className="hover:text-accent hover:underline">
-                        {row.name}
-                      </Link>
-                    </td>
+                    <td className="px-4 py-3 font-semibold">{row.name}</td>
                     <td className="px-4 py-3">{formatNumber(row.leads)}</td>
                     <td className="px-4 py-3 text-accent">{formatNumber(row.llamadas)}</td>
                     <td className="px-4 py-3 text-fuchsia-400">{formatNumber(row.agendadas)}</td>

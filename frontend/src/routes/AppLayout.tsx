@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { apiGet, apiPost, ApiError } from '../lib/api';
-import { IconPanel, IconChart, IconTarget, IconInbox, IconGear, IconLogout, IconUser, IconDocs, IconTray } from '../components/icons';
+import { IconPanel, IconChart, IconInbox, IconGear, IconLogout, IconUser, IconDocs, IconTray } from '../components/icons';
 import AssistantChat from '../components/AssistantChat';
 import WeeklyReportButton from '../components/WeeklyReportButton';
 
@@ -26,16 +26,12 @@ const NAV = [
   { to: '/app', label: 'Panel ejecutivo', icon: IconPanel, end: true },
   { to: '/app/lanzamiento', label: 'Lanzamiento', icon: IconChart },
   { to: '/app/overview', label: 'Resumen', icon: IconChart },
-  { to: '/app/rendimiento', label: 'Rendimiento', icon: IconChart },
   { to: '/app/me', label: 'Mi panel', icon: IconUser },
-  { to: '/app/advisor', label: 'Panel asesor', icon: IconUser },
   { to: '/app/embudo', label: 'Embudo', icon: IconChart },
   { to: '/app/crm', label: 'CRM', icon: IconUser },
   { to: '/app/bandeja', label: 'Bandeja', icon: IconTray },
   { to: '/app/setters', label: 'Setters', icon: IconChart },
   { to: '/app/adquisicion', label: 'Adquisición', icon: IconChart },
-  { to: '/app/meta-ads', label: 'Meta Ads', icon: IconChart },
-  { to: '/app/quality', label: 'Calidad', icon: IconTarget },
   { to: '/app/payments', label: 'Pagos', icon: IconInbox },
   { to: '/app/docs', label: 'Documentación', icon: IconDocs },
   { to: '/app/settings', label: 'Configuración', icon: IconGear },
@@ -45,16 +41,12 @@ const PAGE_META: Record<string, [string, string]> = {
   '/app': ['Panel ejecutivo', 'Vista ejecutiva · Todo en 1'],
   '/app/lanzamiento': ['Lanzamiento', 'Ventas, embudo, asistencia y setters de un lanzamiento'],
   '/app/overview': ['Resumen', 'Vista general del embudo'],
-  '/app/rendimiento': ['Rendimiento', 'Llamadas, videollamadas y chats'],
   '/app/me': ['Mi panel', 'Tus métricas y leads'],
-  '/app/advisor': ['Panel asesor', 'Desempeño individual'],
   '/app/embudo': ['Embudo', 'Entradas reales por etapa'],
   '/app/crm': ['CRM', 'Contactos y oportunidades sincronizados con GHL'],
   '/app/bandeja': ['Bandeja', 'Leads sin gestionar'],
   '/app/setters': ['Setters', 'Productividad de chats por agente'],
   '/app/adquisicion': ['Resumen de adquisición', 'Origen / Canal / Medio'],
-  '/app/meta-ads': ['Meta Ads', 'Campañas, inversión y leads de Facebook/Instagram'],
-  '/app/quality': ['Calidad', 'Análisis de llamadas y videollamadas'],
   '/app/payments': ['Pagos', 'Registro manual de cobros'],
   '/app/docs': ['Documentación', 'Guías del sistema'],
   '/app/settings': ['Configuración', 'Equipo, conexión GHL y automatizaciones'],
@@ -212,8 +204,7 @@ export default function AppLayout() {
 
   const roleColor = user?.role === 'admin' ? '#22d3ee' : user?.role === 'manager' ? '#c084fc' : '#8b96a8';
   const roleLabel = user?.role === 'admin' ? 'Administrador' : user?.role === 'manager' ? 'Manager comercial' : 'Asesor (lectura)';
-  const [title, subtitle] = PAGE_META[location.pathname] ??
-    (location.pathname.startsWith('/app/advisor/') ? ['Panel de asesor', 'Desempeño individual'] : ['ROISystem', '']);
+  const [title, subtitle] = PAGE_META[location.pathname] ?? ['ROISystem', ''];
 
   return (
     <div
