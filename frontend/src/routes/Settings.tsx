@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError } from '../lib/api';
+import { formatDateOnly } from '../lib/format';
 import { NAV } from './AppLayout';
 import type { OutletContext } from './AppLayout';
 
@@ -1286,7 +1287,7 @@ function PhasesEditor({ launch }: { launch: Launch }) {
           <div key={p.id} className="flex items-center gap-3 rounded border border-border2 bg-input px-3 py-2 text-[12.5px]">
             <span className="w-32 shrink-0 font-semibold">{p.label}</span>
             <span className="flex-1 text-gray-400">
-              {new Date(p.startDate).toLocaleDateString('es-CO')} → {new Date(p.endDate).toLocaleDateString('es-CO')}
+              {formatDateOnly(p.startDate)} → {formatDateOnly(p.endDate)}
             </span>
             <button onClick={() => remove(p.id)} className="text-[11px] text-gray-500 hover:text-red-400">
               Eliminar
@@ -1381,7 +1382,7 @@ function LaunchesSection() {
             <div className="flex flex-wrap items-center gap-3 px-3.5 py-3">
               <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{l.name}</span>
               <span className="text-[11px] text-gray-500">
-                {new Date(l.startDate).toLocaleDateString('es-CO')} → {new Date(l.endDate).toLocaleDateString('es-CO')}
+                {formatDateOnly(l.startDate)} → {formatDateOnly(l.endDate)}
               </span>
               <select
                 value={l.status}
