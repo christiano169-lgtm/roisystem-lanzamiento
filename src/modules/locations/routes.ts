@@ -66,6 +66,23 @@ locationsRouter.patch('/:id', requireRole('admin', 'manager'), async (req, res, 
   }
 });
 
+/** Recent sync job history + errors for a Location — the fastest way to see why a sync failed without shell access to the server. */
+locationsRouter.get('/:id/sync-jobs', async (req, res, next) => {
+  try {
+    const location = await prisma.location.findFirst({ where: { id: req.params.id, tenantId: req.auth!.tenantId } });
+    if (!location) return res.status(404).json({ error: 'Location not found' });
+    const jobs = await prisma.syncJob.findMany({
+      where: { locationId: location.id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, entity: true, status: true, cursor: true, recordsSynced: true, error: true, startedAt: true, finishedAt: true, createdAt: true },
+    });
+    res.json({ jobs });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** Enqueues a full backfill (pipelines, contacts, opportunities, calls, appointments). */
 locationsRouter.post('/:id/sync', requireRole('admin', 'manager'), async (req, res, next) => {
   try {
