@@ -10,6 +10,7 @@ import Overview from './routes/Overview';
 import CrmBoard from './routes/CrmBoard';
 import Setters from './routes/lanzamiento/Setters';
 import VentasHotmart from './routes/lanzamiento/VentasHotmart';
+import PagosEfectivo from './routes/lanzamiento/PagosEfectivo';
 import Bandeja from './routes/Bandeja';
 import MyPanel from './routes/MyPanel';
 import Documentacion from './routes/Documentacion';
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="overview" element={<Overview />} />
         <Route path="crm" element={<CrmBoard />} />
         <Route path="ventas-hotmart" element={<VentasHotmart />} />
+        <Route path="pagos-efectivo" element={<PagosEfectivo />} />
         <Route path="setters" element={<Setters />} />
         <Route path="bandeja" element={<Bandeja />} />
         <Route path="me" element={<MyPanel />} />
