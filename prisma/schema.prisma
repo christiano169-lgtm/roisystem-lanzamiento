@@ -1,0 +1,786 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard-side auth (independent from GHL) — one Tenant = one agency client.
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  admin
+  manager
+  asesor
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  overdue
+  suspended
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Single agency-wide OpenAI key (Fase 3), used both for Whisper
+  // transcription of GHL calls and for the quality-analysis LLM prompt.
+  // Encrypted at rest the same way as GHL tokens (see src/modules/ghl/crypto.ts).
+  openAiKeyCipher String?
+  openAiModel     String?
+
+  // Opt-in (Fase 3.5): when true, a successful AI quality analysis writes an
+  // interest-bucket tag (+ objection tags) and a summary note back onto the
+  // GHL contact. Off by default — this touches the tenant's real CRM data,
+  // so it must be an explicit choice, not an automatic side effect. Does NOT
+  // move pipeline stage; tenants can build their own GHL automation off the
+  // tags this adds (see src/modules/quality/writeback.ts).
+  aiWriteBackEnabled Boolean @default(false)
+
+  // Fase 5 — platform/master-admin layer. The person selling ROISystem to
+  // agencies needs to see and manage every tenant from one place, and
+  // billing starts manual (admin marks paid/overdue/suspended by hand,
+  // confirmed with the user — no Stripe integration yet). `suspended`
+  // blocks login for that tenant's non-platform-admin users (see
+  // src/modules/auth/service.ts `login`); the other statuses are informational.
+  subscriptionStatus SubscriptionStatus @default(trial)
+  subscriptionPlan   String?
+  subscriptionNotes  String?            @db.Text
+
+  // Control del sistema — customizes the quality-analysis prompt
+  // (analyzer.ts's SALES_COACH_SYSTEM_PROMPT) per tenant: company context is
+  // appended so the AI knows what the agency sells, evaluation instructions
+  // override the default "what to grade" guidance. Both optional — null
+  // means "use the default prompt", same as before this existed.
+  aiCompanyContext          String? @db.Text
+  aiEvaluationInstructions  String? @db.Text
+
+  users            User[]
+  locations        Location[]
+  metricDefinitions TenantMetricDefinition[]
+
+  @@map("tenants")
+}
+
+// Control del sistema → "Métricas personalizadas": tenant-defined metric
+// labels/formulas, saved for the team to see and agree on a shared
+// definition. Not executed against live KPI data (no formula engine) — this
+// is a definitions registry, same spirit as documenting a metric in a wiki,
+// not a computed dashboard card.
+model TenantMetricDefinition {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  formula   String
+  format    String   @default("Número")
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_metric_definitions")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  role         UserRole @default(asesor)
+  // The platform owner's own account (whoever sells/operates ROISystem
+  // itself, not a regular agency admin) — set automatically on the very
+  // first user ever registered (see auth/service.ts bootstrap logic), and
+  // otherwise only by an existing platform admin. Grants access to
+  // /api/platform/* (cross-tenant: list/create/suspend agencies), unrelated
+  // to `role`, which stays scoped to permissions inside a single tenant.
+  isPlatformAdmin Boolean @default(false)
+  // Links this dashboard user (a closer/setter) to their GHL identity, so
+  // calls/appointments/contacts/opportunities `ownerGhlId` columns and
+  // Fathom video calls can be attributed to the same person for reporting.
+  // Set manually via the profile endpoint — there is no reliable automatic
+  // match between a dashboard login and a GHL user.
+  ghlUserId    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payments         Payment[]
+  fathomConnection FathomConnection?
+  videoCalls       VideoCall[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// GHL OAuth connection — one per Tenant (Agency-level install). Tokens are
+// stored encrypted at the application layer (see src/modules/ghl/crypto.ts);
+// the columns below hold ciphertext, never plaintext.
+// ---------------------------------------------------------------------------
+
+enum BusinessLine {
+  high_ticket
+  lanzamiento
+}
+
+enum SyncStatus {
+  pending
+  syncing
+  synced
+  error
+}
+
+model Location {
+  id            String       @id @default(cuid())
+  tenantId      String
+  ghlLocationId String
+  name          String
+  businessLine  BusinessLine @default(high_ticket)
+  syncStatus    SyncStatus   @default(pending)
+  lastSyncedAt  DateTime?
+  // Fase 6: replaced Agency-level OAuth (GhlConnection, removed) with a
+  // per-Location GHL Private Integration Token — the client generates this
+  // themselves from their own sub-account's GHL settings (no Marketplace
+  // app, no review, no need for the platform operator to own a GHL
+  // account). Encrypted at rest the same way as every other credential in
+  // this project (src/modules/ghl/crypto.ts).
+  ghlPitCipher  String?
+  ghlPitAddedAt DateTime?
+
+  // Control del sistema → "Metas": real goals compared against actual
+  // synced Call/Appointment counts (see setters/service.ts and the personal
+  // advisor panel) — null means no goal set yet, not zero.
+  dailyCallGoal      Int?
+  weeklyMeetingGoal  Int?
+
+  // Control del sistema → "Disparadores de chat": saved on/off preferences.
+  // Nothing dispatches on these yet (no background trigger engine) — they
+  // persist the tenant's intent so the toggle isn't lost, same as any other
+  // setting here that's ahead of its automation.
+  triggerStaleChatEnabled     Boolean @default(false)
+  triggerKeywordPriceEnabled  Boolean @default(false)
+  triggerRescheduleEnabled    Boolean @default(false)
+  triggerNoOfferClosedEnabled Boolean @default(false)
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts         Contact[]
+  pipelineStages   PipelineStage[]
+  opportunities    Opportunity[]
+  calls            Call[]
+  appointments     Appointment[]
+  conversations    Conversation[]
+  tags             Tag[]
+  syncJobs         SyncJob[]
+  ghlUsers         GhlUser[]
+  payments         Payment[]
+  fathomConnections FathomConnection[]
+  videoCalls       VideoCall[]
+  qualityAnalyses  QualityAnalysis[]
+  stageAutomationRules StageAutomationRule[]
+  metaAdsConnection MetaAdsConnection?
+  metaAdInsights   MetaAdInsight[]
+  hotmartConnection HotmartConnection?
+  hotmartSales     HotmartSale[]
+  launches         Launch[]
+  forms            Form[]
+  formSubmissions  FormSubmission[]
+
+  @@unique([tenantId, ghlLocationId])
+  @@map("locations")
+}
+
+// One ad account per Location, connected by an admin (agency-level asset,
+// unlike Fathom which is per-closer) — a long-lived Meta System User token
+// with ads_read scope on that ad account. See src/modules/metaAds/*.
+model MetaAdsConnection {
+  id                String    @id @default(cuid())
+  locationId        String    @unique
+  adAccountId       String
+  accessTokenCipher String
+  lastSyncedAt      DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@map("meta_ads_connections")
+}
+
+// Daily, per-campaign ad performance — spend/leads for the "de dónde vienen
+// tus leads" acquisition picture. Upserted by campaignId+date so re-syncing
+// an overlapping window just refreshes rows instead of duplicating them.
+model MetaAdInsight {
+  id           String   @id @default(cuid())
+  locationId   String
+  campaignId   String
+  campaignName String?
+  date         DateTime
+  spend        Decimal  @db.Decimal(12, 2)
+  impressions  Int      @default(0)
+  clicks       Int      @default(0)
+  leads        Int      @default(0)
+  raw          Json
+  createdAt    DateTime @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, campaignId, date])
+  @@index([locationId, date])
+  @@map("meta_ad_insights")
+}
+
+// One Hotmart producer account per Location, connected by an admin — OAuth2
+// client_credentials (client_id/client_secret from Hotmart's own developer
+// credentials tool, not a user login). See src/modules/hotmart/*.
+model HotmartConnection {
+  id                 String    @id @default(cuid())
+  locationId         String    @unique
+  clientId           String
+  clientSecretCipher String
+  // Optional: the "Hottok" shown in the client's own Hotmart account →
+  // Ferramentas > Webhook, needed to accept real-time PURCHASE_* webhooks
+  // instead of relying only on the polling sync (see
+  // src/modules/hotmart/webhooks.ts). Each client points their own webhook
+  // at POST /webhooks/hotmart/:locationId and pastes this token here — the
+  // handler checks the incoming payload's `hottok` field against it before
+  // trusting the event, since Hotmart's webhook URL carries no other
+  // per-tenant identity. Null means "webhook not set up yet, rely on
+  // Sincronizar ahora / the periodic backfill".
+  webhookHottokCipher String?
+  lastSyncedAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@map("hotmart_connections")
+}
+
+model HotmartSale {
+  id            String    @id @default(cuid())
+  locationId    String
+  transactionId String
+  productName   String?
+  buyerEmail    String?
+  priceValue    Decimal   @db.Decimal(12, 2)
+  currency      String?
+  status        String?
+  purchaseDate  DateTime?
+  raw           Json
+  createdAt     DateTime  @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, transactionId])
+  @@index([locationId, purchaseDate])
+  @@map("hotmart_sales")
+}
+
+// ---------------------------------------------------------------------------
+// Lanzamientos — a launch is a dated campaign (webinar/challenge → cart open
+// → cart close) run out of a Location. Everything else in this section
+// (sales, funnel, attendance, setter management) gets filtered to a
+// Launch's [startDate, endDate] window so an agency can look at one launch
+// at a time instead of the subaccount's whole lifetime, and compare past
+// launches against each other. Generic by design (no hardcoded tag/form
+// names) so it works for any GHL subaccount a client connects, not just
+// this one.
+// ---------------------------------------------------------------------------
+
+enum LaunchStatus {
+  planned
+  active
+  closed
+}
+
+model Launch {
+  id         String       @id @default(cuid())
+  locationId String
+  name       String
+  startDate  DateTime
+  endDate    DateTime
+  status     LaunchStatus @default(planned)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  location         Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  attendanceRules  LaunchAttendanceRule[]
+
+  @@index([locationId, startDate])
+  @@map("launches")
+}
+
+enum AttendanceMatchType {
+  tag
+  form
+}
+
+// Configurable per launch (not hardcoded): the agency picks which GHL tag
+// or form name means "attended this class" — set from whatever the client
+// already uses in their own GHL tags/forms/workflows, matched by name
+// against the Tag/Form rows synced for the same Location.
+model LaunchAttendanceRule {
+  id         String              @id @default(cuid())
+  launchId   String
+  label      String
+  matchType  AttendanceMatchType
+  tagName    String?
+  formName   String?
+  position   Int                 @default(0)
+  createdAt  DateTime            @default(now())
+
+  launch Launch @relation(fields: [launchId], references: [id], onDelete: Cascade)
+
+  @@map("launch_attendance_rules")
+}
+
+// GHL's form catalog for a Location — needed to resolve a FormSubmission's
+// formId to a human name (submissions don't carry the form's name inline).
+model Form {
+  id         String   @id @default(cuid())
+  locationId String
+  ghlId      String
+  name       String
+  raw        Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  location    Location         @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  submissions FormSubmission[]
+
+  @@unique([locationId, ghlId])
+  @@map("forms")
+}
+
+model FormSubmission {
+  id           String    @id @default(cuid())
+  locationId   String
+  ghlId        String
+  formId       String
+  contactGhlId String?
+  submittedAt  DateTime?
+  raw          Json
+  createdAt    DateTime  @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  form     Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, ghlId])
+  @@index([locationId, submittedAt])
+  @@map("form_submissions")
+}
+
+enum InterestBucket {
+  alto
+  medio
+  bajo
+}
+
+// Opt-in per-Location config (Fase 3.5): "when the AI detects this interest
+// level, move the opportunity to this pipeline stage." Requires
+// Tenant.aiWriteBackEnabled too — this is a second, more consequential gate
+// on top of that one, since moving stage (unlike the tag+note write-back)
+// changes what the sales team sees as the deal's status. One rule per
+// interestBucket per Location; missing/disabled bucket = no auto-move for
+// that bucket.
+model StageAutomationRule {
+  id             String         @id @default(cuid())
+  locationId     String
+  interestBucket InterestBucket
+  targetStageId  String
+  enabled        Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  location    Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  targetStage PipelineStage @relation(fields: [targetStageId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, interestBucket])
+  @@map("stage_automation_rules")
+}
+
+// One closer's personal Fathom API key (Fase 3 — confirmed with the user:
+// Fathom is connected per-closer, not a single agency-wide app). The closer
+// also picks which Location their video calls belong to.
+model FathomConnection {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  locationId    String
+  apiKeyCipher  String
+  lastSyncedAt  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@map("fathom_connections")
+}
+
+// Video calls pulled from a closer's Fathom account. NOTE: Fathom's public
+// API contract (paths, pagination, transcript shape) is implemented on a
+// best-effort basis in src/modules/fathom/client.ts — verify against live
+// docs before production, same caveat as the GHL sync/*.ts modules.
+model VideoCall {
+  id              String    @id @default(cuid())
+  locationId      String
+  closerUserId    String
+  ownerGhlId      String?
+  contactGhlId    String?
+  fathomMeetingId String
+  title           String?
+  recordingUrl    String?
+  transcript      String?   @db.Text
+  durationSeconds Int?
+  occurredAt      DateTime?
+  raw             Json
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  location        Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  closer          User              @relation(fields: [closerUserId], references: [id], onDelete: Cascade)
+  qualityAnalysis QualityAnalysis?
+
+  @@unique([closerUserId, fathomMeetingId])
+  @@index([locationId, occurredAt])
+  @@map("video_calls")
+}
+
+// Location's GHL team members (closers/setters). Synced read-only, full list
+// (no pagination) alongside pipelines/stages — needed to turn `ownerGhlId`
+// columns on Contact/Opportunity/Call/Appointment into a display name for
+// the advisor ranking + filter.
+model GhlUser {
+  id         String   @id @default(cuid())
+  locationId String
+  ghlUserId  String
+  name       String
+  email      String?
+  raw        Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, ghlUserId])
+  @@map("ghl_users")
+}
+
+// ---------------------------------------------------------------------------
+// Synced GHL entities. Every row keeps `ghlId` (source of truth id) + `raw`
+// (full API payload as jsonb) so we never lose data the mapped columns don't
+// cover yet — KPI aggregation (Fase 2) can read straight from `raw` until a
+// column is promoted.
+// ---------------------------------------------------------------------------
+
+model Contact {
+  id         String    @id @default(cuid())
+  locationId String
+  ghlId      String
+  firstName  String?
+  lastName   String?
+  email      String?
+  phone      String?
+  ownerGhlId String?
+  source     String?
+  ghlCreatedAt DateTime?
+  ghlUpdatedAt DateTime?
+  raw        Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  location      Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  opportunities Opportunity[]
+  tags          ContactTag[]
+
+  @@unique([locationId, ghlId])
+  @@index([locationId, ghlCreatedAt])
+  @@map("contacts")
+}
+
+model Tag {
+  id         String   @id @default(cuid())
+  locationId String
+  name       String
+  createdAt  DateTime @default(now())
+
+  location Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  contacts ContactTag[]
+
+  @@unique([locationId, name])
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+model PipelineStage {
+  id           String @id @default(cuid())
+  locationId   String
+  ghlPipelineId String
+  ghlStageId   String
+  pipelineName String
+  stageName    String
+  position     Int    @default(0)
+
+  location      Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  opportunities Opportunity[]
+  stageAutomationRules StageAutomationRule[]
+
+  @@unique([locationId, ghlPipelineId, ghlStageId])
+  @@map("pipeline_stages")
+}
+
+model Opportunity {
+  id           String    @id @default(cuid())
+  locationId   String
+  ghlId        String
+  contactId    String?
+  pipelineStageId String?
+  name         String?
+  monetaryValue Decimal? @db.Decimal(14, 2)
+  status       String?
+  ownerGhlId   String?
+  ghlCreatedAt DateTime?
+  ghlUpdatedAt DateTime?
+  raw          Json
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  location      Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  contact       Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  pipelineStage PipelineStage? @relation(fields: [pipelineStageId], references: [id], onDelete: SetNull)
+  payments      Payment[]
+
+  @@unique([locationId, ghlId])
+  @@index([locationId, ghlCreatedAt])
+  @@map("opportunities")
+}
+
+// Manual "cash collected" entries — Fase 2 has no payment-gateway
+// integration (Stripe/GHL Payments) yet, so an admin/manager logs receipts
+// by hand against an Opportunity. Revisit once a real finance source is
+// chosen; the KPI service treats this as the only source of truth for
+// "efectivo cobrado" until then.
+model Payment {
+  id              String   @id @default(cuid())
+  locationId      String
+  opportunityId   String
+  amount          Decimal  @db.Decimal(14, 2)
+  collectedAt     DateTime
+  note            String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  createdBy   User        @relation(fields: [createdByUserId], references: [id])
+
+  @@index([locationId, collectedAt])
+  @@map("payments")
+}
+
+enum TranscriptStatus {
+  not_applicable // no recordingUrl to transcribe
+  pending
+  processing
+  done
+  failed
+}
+
+model Call {
+  id             String    @id @default(cuid())
+  locationId     String
+  ghlId          String
+  contactGhlId   String?
+  ownerGhlId     String?
+  direction      String?
+  status         String?
+  durationSeconds Int?
+  recordingUrl   String?
+  // Whisper transcript of `recordingUrl` (Fase 3) — see
+  // src/modules/quality/transcription.ts. Only attempted when a
+  // recordingUrl exists; otherwise stays `not_applicable`.
+  transcript       String?          @db.Text
+  transcriptStatus TranscriptStatus @default(not_applicable)
+  ghlCreatedAt   DateTime?
+  raw            Json
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  location        Location         @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  qualityAnalysis QualityAnalysis?
+
+  @@unique([locationId, ghlId])
+  @@index([locationId, ghlCreatedAt])
+  @@map("calls")
+}
+
+model Appointment {
+  id           String    @id @default(cuid())
+  locationId   String
+  ghlId        String
+  contactGhlId String?
+  ownerGhlId   String?
+  title        String?
+  status       String?
+  startTime    DateTime?
+  endTime      DateTime?
+  raw          Json
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, ghlId])
+  @@index([locationId, startTime])
+  @@map("appointments")
+}
+
+model Conversation {
+  id           String    @id @default(cuid())
+  locationId   String
+  ghlId        String
+  contactGhlId String?
+  ownerGhlId   String?
+  lastMessageAt DateTime?
+  unreadCount  Int?
+  raw          Json
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  location        Location         @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  messages         Message[]
+  qualityAnalysis  QualityAnalysis?
+
+  @@unique([locationId, ghlId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  ghlId          String
+  direction      String?
+  messageType    String?
+  body           String?
+  ghlCreatedAt   DateTime?
+  raw            Json
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, ghlId])
+  @@map("messages")
+}
+
+// ---------------------------------------------------------------------------
+// Fase 3 — AI quality analysis. One row per Call/VideoCall/Conversation
+// (exactly one of the three FKs below is set, matching `channel`); re-runs
+// upsert the same row rather than accumulating history, so this always
+// reflects the latest analysis for that conversation/call.
+// ---------------------------------------------------------------------------
+
+enum QualityChannel {
+  call
+  video_call
+  chat
+}
+
+// Fixed taxonomy the AI must classify each detected objection into — added
+// alongside the original freeform `objections` (kept for the exact phrase
+// shown to the closer) so counts can be aggregated for the "Objeciones más
+// comunes" widget, which freeform text can't support reliably.
+enum ObjectionCategory {
+  precio
+  tiempo
+  competencia
+  confianza
+  necesidad
+  otro
+}
+
+model QualityAnalysis {
+  id                  String              @id @default(cuid())
+  locationId          String
+  channel             QualityChannel
+  ownerGhlId          String?
+  callId              String?             @unique
+  videoCallId         String?             @unique
+  conversationId      String?             @unique
+  interestScorePct    Int
+  qualityScore        Decimal             @db.Decimal(3, 1)
+  objections          Json
+  objectionCategories ObjectionCategory[] @default([])
+  summary             String?             @db.Text
+  improvementNotes    String?             @db.Text
+  model               String
+  analyzedAt          DateTime            @default(now())
+  raw                 Json
+
+  location     Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  call         Call?         @relation(fields: [callId], references: [id], onDelete: Cascade)
+  videoCall    VideoCall?    @relation(fields: [videoCallId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, ownerGhlId])
+  @@map("quality_analyses")
+}
+
+// ---------------------------------------------------------------------------
+// Sync job bookkeeping (backfill + incremental) for observability/retries.
+// ---------------------------------------------------------------------------
+
+// 'calls' deliberately excluded: GHL has no standalone calls resource — Call
+// rows are a side effect of the `conversations` sync (see
+// src/modules/ghl/sync/calls.ts for why), so it isn't independently
+// backfillable/trackable as its own SyncJob entity.
+enum SyncEntity {
+  contacts
+  opportunities
+  appointments
+  conversations
+  formSubmissions
+}
+
+enum JobStatus {
+  queued
+  running
+  completed
+  failed
+}
+
+model SyncJob {
+  id          String     @id @default(cuid())
+  locationId  String
+  entity      SyncEntity
+  status      JobStatus  @default(queued)
+  cursor      String?
+  recordsSynced Int      @default(0)
+  error       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, entity, status])
+  @@map("sync_jobs")
+}

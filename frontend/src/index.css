@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #08080a;
+  color: #e6edf5;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+input[type='date'] {
+  color-scheme: dark;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #33333b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---- Motion layer (matches the original design's roi* keyframes) ---- */
+@keyframes roiFlow {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 44px 0;
+  }
+}
+@keyframes roiPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes roiGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes roiIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes roiPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.roi-in {
+  animation: roiIn 0.34s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.roi-pop {
+  animation: roiPop 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.roi-pulse {
+  animation: roiPulse 2s ease-in-out infinite;
+}
+.roi-grow-x {
+  transform-origin: left;
+  animation: roiGrow 0.6s ease-out both;
+}
+.roi-flow {
+  background-image: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.16) 0 8px, transparent 8px 22px);
+  animation: roiFlow 1.8s linear infinite;
+}
+.roi-stagger > * {
+  animation: roiIn 0.32s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.roi-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.roi-stagger > *:nth-child(2) {
+  animation-delay: 25ms;
+}
+.roi-stagger > *:nth-child(3) {
+  animation-delay: 50ms;
+}
+.roi-stagger > *:nth-child(4) {
+  animation-delay: 75ms;
+}
+.roi-stagger > *:nth-child(5) {
+  animation-delay: 100ms;
+}
+.roi-stagger > *:nth-child(6) {
+  animation-delay: 125ms;
+}
+.roi-stagger > *:nth-child(n + 7) {
+  animation-delay: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roi-in,
+  .roi-pop,
+  .roi-pulse,
+  .roi-grow-x,
+  .roi-flow,
+  .roi-stagger > * {
+    animation: none !important;
+  }
+}
