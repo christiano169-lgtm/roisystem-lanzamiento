@@ -64,6 +64,26 @@ dataRouter.get('/contacts', async (req, res, next) => {
   }
 });
 
+/** Bandeja's "Ver conversación" action — the chat transcript for one contact, without the caller needing to know the underlying Conversation id. */
+dataRouter.get('/contacts/:id/conversation', async (req, res, next) => {
+  try {
+    const contact = await prisma.contact.findUnique({ where: { id: req.params.id! } });
+    if (!contact) throw new NotFoundError('Contact not found');
+    await assertOwnedLocation(req.auth!.tenantId, contact.locationId);
+
+    if (!contact.ghlId) return res.json({ conversation: null });
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { locationId: contact.locationId, contactGhlId: contact.ghlId },
+      orderBy: { lastMessageAt: 'desc' },
+      include: { messages: { orderBy: { ghlCreatedAt: 'asc' } } },
+    });
+    res.json({ conversation });
+  } catch (err) {
+    next(err);
+  }
+});
+
 dataRouter.get('/opportunities', async (req, res, next) => {
   try {
     const q = listQuerySchema.parse(req.query);
