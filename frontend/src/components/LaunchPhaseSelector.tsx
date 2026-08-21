@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiGet } from '../lib/api';
-import { formatDate } from '../lib/format';
+import { formatDateOnly } from '../lib/format';
 
 interface Launch {
   id: string;
@@ -95,7 +95,7 @@ export default function LaunchPhaseSelector({ locationId, onChange }: { location
         </select>
         {from && to && (
           <span className="text-[12px] text-gray-500">
-            {formatDate(from)} → {formatDate(to)}
+            {formatDateOnly(from)} → {formatDateOnly(to)}
           </span>
         )}
       </div>
