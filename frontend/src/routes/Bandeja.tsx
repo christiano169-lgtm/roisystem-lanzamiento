@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { apiGet, apiPatch, ApiError } from '../lib/api';
 import { daysAgoISODate, formatNumber } from '../lib/format';
 import RangePicker, { type RangePreset } from '../components/RangePicker';
-import Modal from '../components/Modal';
+import ConversationModal from '../components/ConversationModal';
 import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
@@ -15,23 +15,24 @@ interface ContactRow {
   source: string | null;
   ownerGhlId: string | null;
   ghlCreatedAt: string | null;
+  conversationStatus: 'atendido' | 'pendiente' | 'sin_conversacion';
   opportunities: { pipelineStage: { stageName: string } | null }[];
 }
+
+const STATUS_LABEL: Record<ContactRow['conversationStatus'], string> = {
+  atendido: 'Atendido',
+  pendiente: 'Sin responder',
+  sin_conversacion: 'Sin conversación',
+};
+const STATUS_COLOR: Record<ContactRow['conversationStatus'], string> = {
+  atendido: '#34d399',
+  pendiente: '#ef4444',
+  sin_conversacion: '#8b96a8',
+};
 
 interface GhlUser {
   ghlUserId: string;
   name: string;
-}
-
-interface Message {
-  id: string;
-  direction: string | null;
-  body: string | null;
-  ghlCreatedAt: string | null;
-}
-
-interface ConversationResponse {
-  conversation: { id: string; messages: Message[] } | null;
 }
 
 type Filter = 'todos' | 'sin' | 'sla';
@@ -46,44 +47,6 @@ function waitLabel(ghlCreatedAt: string | null): { label: string; minutes: numbe
   if (minutes < 60) return { label: `${minutes} min`, minutes };
   if (minutes < 60 * 24) return { label: `${Math.round(minutes / 60)} h`, minutes };
   return { label: `${Math.round(minutes / (60 * 24))} d`, minutes };
-}
-
-function ConversationModal({ contact, onClose }: { contact: ContactRow; onClose: () => void }) {
-  const [data, setData] = useState<ConversationResponse | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiGet<ConversationResponse>(`/api/contacts/${contact.id}/conversation`)
-      .then((res) => !cancelled && setData(res))
-      .catch(() => !cancelled && setData({ conversation: null }));
-    return () => {
-      cancelled = true;
-    };
-  }, [contact.id]);
-
-  const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ') || '(sin nombre)';
-
-  return (
-    <Modal title={`Conversación — ${name}`} onClose={onClose}>
-      {!data && <p className="text-[13px] text-gray-500">Cargando…</p>}
-      {data && !data.conversation && <p className="text-[13px] text-gray-500">Sin conversación registrada para este contacto.</p>}
-      {data?.conversation && data.conversation.messages.length === 0 && <p className="text-[13px] text-gray-500">La conversación existe pero no tiene mensajes sincronizados.</p>}
-      {data?.conversation && (
-        <div className="flex flex-col gap-2.5">
-          {data.conversation.messages.map((m) => (
-            <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[75%] rounded-lg px-3.5 py-2.5 text-[13px] ${m.direction === 'outbound' ? 'bg-accent/15 text-accent' : 'bg-card text-gray-200'}`}
-              >
-                <p>{m.body ?? <span className="italic text-gray-500">(sin texto — adjunto o llamada)</span>}</p>
-                {m.ghlCreatedAt && <p className="mt-1 text-[10px] text-gray-500">{new Date(m.ghlCreatedAt).toLocaleString('es-CO')}</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Modal>
-  );
 }
 
 export default function Bandeja() {
@@ -215,6 +178,7 @@ export default function Bandeja() {
               <th className="px-4 py-3 font-medium">Lead</th>
               <th className="px-4 py-3 font-medium">Origen</th>
               <th className="px-4 py-3 font-medium">Espera</th>
+              <th className="px-4 py-3 font-medium">Estado</th>
               <th className="px-4 py-3 font-medium">Asesor</th>
               <th className="px-4 py-3 font-medium"></th>
             </tr>
@@ -222,7 +186,7 @@ export default function Bandeja() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
                   Sin leads en esta vista.
                 </td>
               </tr>
@@ -230,12 +194,22 @@ export default function Bandeja() {
             {rows.map((c) => (
               <tr key={c.id} className="roi-in border-t border-[#1e1e23] transition-colors hover:bg-white/[0.03]">
                 <td className="px-4 py-3">
-                  <span className="block font-semibold">{[c.firstName, c.lastName].filter(Boolean).join(' ') || '(sin nombre)'}</span>
-                  <span className="block font-mono text-[11px] text-gray-500">{c.phone ?? '—'}</span>
+                  <button onClick={() => setOpenConversationFor(c)} className="text-left hover:underline">
+                    <span className="block font-semibold">{[c.firstName, c.lastName].filter(Boolean).join(' ') || '(sin nombre)'}</span>
+                    <span className="block font-mono text-[11px] text-gray-500">{c.phone ?? '—'}</span>
+                  </button>
                 </td>
                 <td className="px-4 py-3 text-gray-300">{c.source ?? '—'}</td>
                 <td className="px-4 py-3" style={{ color: c.wait.minutes > 30 ? '#ef4444' : '#34d399' }}>
                   {c.wait.label}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                    style={{ background: `${STATUS_COLOR[c.conversationStatus]}22`, color: STATUS_COLOR[c.conversationStatus] }}
+                  >
+                    {STATUS_LABEL[c.conversationStatus]}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <select
@@ -264,7 +238,13 @@ export default function Bandeja() {
         </table>
       </div>
 
-      {openConversationFor && <ConversationModal contact={openConversationFor} onClose={() => setOpenConversationFor(null)} />}
+      {openConversationFor && (
+        <ConversationModal
+          contactId={openConversationFor.id}
+          name={[openConversationFor.firstName, openConversationFor.lastName].filter(Boolean).join(' ') || '(sin nombre)'}
+          onClose={() => setOpenConversationFor(null)}
+        />
+      )}
     </div>
   );
 }

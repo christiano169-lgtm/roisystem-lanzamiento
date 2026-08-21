@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { apiGet, apiPost } from '../lib/api';
 import { formatCurrency, formatDate } from '../lib/format';
 import LaunchPhaseSelector, { type LaunchWindow } from '../components/LaunchPhaseSelector';
+import ConversationModal from '../components/ConversationModal';
 import NoLocationState from '../components/NoLocationState';
 import type { OutletContext } from './AppLayout';
 
@@ -14,9 +15,21 @@ interface ContactRow {
   phone: string | null;
   ownerGhlId: string | null;
   ghlCreatedAt: string | null;
+  conversationStatus: 'atendido' | 'pendiente' | 'sin_conversacion';
   tags: { tag: { id: string; name: string } }[];
   opportunities: { monetaryValue: string | null; pipelineStage: { pipelineName: string; stageName: string } | null }[];
 }
+
+const STATUS_LABEL: Record<ContactRow['conversationStatus'], string> = {
+  atendido: 'Atendido',
+  pendiente: 'Sin responder',
+  sin_conversacion: 'Sin conversación',
+};
+const STATUS_COLOR: Record<ContactRow['conversationStatus'], string> = {
+  atendido: '#34d399',
+  pendiente: '#ef4444',
+  sin_conversacion: '#8b96a8',
+};
 
 interface GhlUser {
   ghlUserId: string;
@@ -42,6 +55,7 @@ export default function CrmBoard() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [openConversationFor, setOpenConversationFor] = useState<ContactRow | null>(null);
 
   useEffect(() => {
     if (!locationId) return;
@@ -145,14 +159,16 @@ export default function CrmBoard() {
               <th className="px-4 py-3 font-medium">Etiquetas</th>
               <th className="px-4 py-3 font-medium">Etapa</th>
               <th className="px-4 py-3 font-medium">Valor</th>
+              <th className="px-4 py-3 font-medium">Estado</th>
               <th className="px-4 py-3 font-medium">Asesor</th>
               <th className="px-4 py-3 font-medium">Creado</th>
+              <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {visibleContacts.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
                   {search ? 'Sin resultados para esa búsqueda.' : 'Sin contactos en este rango todavía.'}
                 </td>
               </tr>
@@ -183,14 +199,35 @@ export default function CrmBoard() {
                     {latestOpp?.pipelineStage ? `${latestOpp.pipelineStage.pipelineName} · ${latestOpp.pipelineStage.stageName}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-emerald-400">{latestOpp?.monetaryValue ? formatCurrency(Number(latestOpp.monetaryValue)) : '—'}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                      style={{ background: `${STATUS_COLOR[c.conversationStatus]}22`, color: STATUS_COLOR[c.conversationStatus] }}
+                    >
+                      {STATUS_LABEL[c.conversationStatus]}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-gray-300">{ownerName(c.ownerGhlId)}</td>
                   <td className="px-4 py-3 text-gray-500">{c.ghlCreatedAt ? formatDate(c.ghlCreatedAt) : '—'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => setOpenConversationFor(c)} className="text-[11px] text-accent hover:underline">
+                      Ver conversación
+                    </button>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {openConversationFor && (
+        <ConversationModal
+          contactId={openConversationFor.id}
+          name={[openConversationFor.firstName, openConversationFor.lastName].filter(Boolean).join(' ') || '(sin nombre)'}
+          onClose={() => setOpenConversationFor(null)}
+        />
+      )}
     </div>
   );
 }

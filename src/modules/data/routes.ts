@@ -58,7 +58,22 @@ dataRouter.get('/contacts', async (req, res, next) => {
       }),
       prisma.contact.count({ where }),
     ]);
-    res.json({ items, total, page: q.page, pageSize: q.pageSize });
+
+    // Bandeja/CRM show "¿ya se le respondió?" at a glance — batched in one
+    // query per page instead of one conversation lookup per contact (N+1).
+    const ghlIds = items.map((c) => c.ghlId).filter(Boolean);
+    const conversations = ghlIds.length
+      ? await prisma.conversation.findMany({
+          where: { locationId: q.locationId, contactGhlId: { in: ghlIds } },
+          include: { messages: { select: { direction: true } } },
+        })
+      : [];
+    const statusByContactGhlId = new Map(
+      conversations.map((conv) => [conv.contactGhlId, conv.messages.some((m) => m.direction === 'outbound') ? 'atendido' : 'pendiente']),
+    );
+    const itemsWithStatus = items.map((c) => ({ ...c, conversationStatus: statusByContactGhlId.get(c.ghlId) ?? 'sin_conversacion' }));
+
+    res.json({ items: itemsWithStatus, total, page: q.page, pageSize: q.pageSize });
   } catch (err) {
     next(err);
   }
