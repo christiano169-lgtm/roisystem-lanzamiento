@@ -8,6 +8,7 @@ import type { HotmartOfferType } from '@prisma/client';
 const APPROVED_STATUSES = new Set(['APPROVED', 'COMPLETE']);
 const PENDING_CASH_STATUSES = new Set(['BILLET_PRINTED']);
 const REFUND_LIKE_STATUSES = new Set(['REFUNDED', 'PROTEST', 'CHARGEBACK']);
+const CANCELLED_STATUSES = new Set(['CANCELED', 'CANCELLED', 'EXPIRED']);
 
 export interface LaunchSalesKpis {
   comprasAprobadas: number;
@@ -123,6 +124,82 @@ export async function getLaunchSalesKpis(locationId: string, from: Date, to: Dat
     ingresoPorBumps,
     pendientePorCobrar,
     reembolsosYDisputas: -reembolsosYDisputas,
+  };
+}
+
+export interface StatusBreakdownBucket {
+  plus: number;
+  general: number;
+}
+
+export interface LaunchStatusBreakdown {
+  aprobadas: StatusBreakdownBucket;
+  abandonados: StatusBreakdownBucket;
+  canceladas: StatusBreakdownBucket;
+  ticketsEmitidos: StatusBreakdownBucket;
+  recovery: { total: number; recuperados: number; pendientes: number };
+}
+
+/**
+ * "Plus" (VIP) vs "General" split for the four states the client tracks
+ * per launch: approved purchases, abandoned carts, cancellations, and cash
+ * tickets issued — plus a recovery count for the three "money on the
+ * table" states (abandoned/cancelled/ticket), i.e. how many of those
+ * buyers eventually completed an approved purchase vs. still haven't.
+ * Reads from HotmartSaleEvent (see its schema comment) instead of
+ * HotmartSale, since the latter only keeps a transaction's latest status —
+ * a paid cash ticket would otherwise look indistinguishable from a normal
+ * approved sale and undercount "tickets emitidos".
+ */
+export async function getLaunchStatusBreakdown(locationId: string, from: Date, to: Date): Promise<LaunchStatusBreakdown> {
+  const [offers, events, approvedSales] = await Promise.all([
+    prisma.hotmartOffer.findMany({ where: { locationId } }),
+    prisma.hotmartSaleEvent.findMany({ where: { locationId, eventAt: { gte: from, lte: to } } }),
+    prisma.hotmartSale.findMany({
+      where: { locationId, purchaseDate: { gte: from, lte: to }, status: { in: [...APPROVED_STATUSES] } },
+      select: { productName: true, buyerEmail: true },
+    }),
+  ]);
+
+  const typeByProduct = offerTypeMap(offers);
+  const bucketOf = (productName: string | null): keyof StatusBreakdownBucket =>
+    productName && typeByProduct.get(productName) === 'vip' ? 'plus' : 'general';
+
+  const aprobadas: StatusBreakdownBucket = { plus: 0, general: 0 };
+  for (const sale of approvedSales) aprobadas[bucketOf(sale.productName)]++;
+
+  const abandonados: StatusBreakdownBucket = { plus: 0, general: 0 };
+  const canceladas: StatusBreakdownBucket = { plus: 0, general: 0 };
+  const ticketsEmitidos: StatusBreakdownBucket = { plus: 0, general: 0 };
+  const moneyOnTableEmails = new Set<string>();
+
+  for (const ev of events) {
+    const status = (ev.status ?? '').toUpperCase();
+    const bucket = bucketOf(ev.productName);
+    if (status === 'ABANDONED_CART') {
+      abandonados[bucket]++;
+      if (ev.buyerEmail) moneyOnTableEmails.add(ev.buyerEmail.toLowerCase());
+    } else if (CANCELLED_STATUSES.has(status)) {
+      canceladas[bucket]++;
+      if (ev.buyerEmail) moneyOnTableEmails.add(ev.buyerEmail.toLowerCase());
+    } else if (PENDING_CASH_STATUSES.has(status)) {
+      ticketsEmitidos[bucket]++;
+      if (ev.buyerEmail) moneyOnTableEmails.add(ev.buyerEmail.toLowerCase());
+    }
+  }
+
+  const approvedEmails = new Set(approvedSales.filter((s) => s.buyerEmail).map((s) => s.buyerEmail!.toLowerCase()));
+  let recuperados = 0;
+  for (const email of moneyOnTableEmails) {
+    if (approvedEmails.has(email)) recuperados++;
+  }
+
+  return {
+    aprobadas,
+    abandonados,
+    canceladas,
+    ticketsEmitidos,
+    recovery: { total: moneyOnTableEmails.size, recuperados, pendientes: moneyOnTableEmails.size - recuperados },
   };
 }
 

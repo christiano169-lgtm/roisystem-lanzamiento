@@ -2,7 +2,17 @@ import { prisma } from '../../../db/prisma.js';
 import type { AttendanceMatchType, LaunchStatus } from '@prisma/client';
 import { getFunnel, getOperationalKpis } from '../../kpis/service.js';
 import { getHotmartSummary } from '../../hotmart/service.js';
-import { getLaunchSalesKpis, getLaunchSalesRanking, getLaunchSalesVolume, type LaunchSalesKpis, type SalesRankingRow, type SalesVolumeRow } from '../../hotmart/launchSales.js';
+import {
+  getLaunchSalesKpis,
+  getLaunchSalesRanking,
+  getLaunchSalesVolume,
+  getLaunchStatusBreakdown,
+  type LaunchSalesKpis,
+  type LaunchStatusBreakdown,
+  type SalesRankingRow,
+  type SalesVolumeRow,
+} from '../../hotmart/launchSales.js';
+import { getLaunchTribeBreakdown, getLaunchCountryBreakdown, type TribeRow, type CountryRow } from './segments.js';
 import { getSettersSummary } from '../setters/service.js';
 import type { FunnelStage } from '../../kpis/types.js';
 
@@ -175,6 +185,9 @@ export interface LaunchSummary {
   salesKpis: LaunchSalesKpis;
   salesVolume: SalesVolumeRow[];
   salesRanking: SalesRankingRow[];
+  statusBreakdown: LaunchStatusBreakdown;
+  tribes: TribeRow[];
+  countries: CountryRow[];
   funnel: FunnelStage[];
   asistencia: AttendanceRow[];
   setters: Awaited<ReturnType<typeof getSettersSummary>>;
@@ -201,17 +214,21 @@ export async function getLaunchSummary(
   const to = window?.to ?? launch.endDate;
   const filters = { from, to };
 
-  const [operational, funnel, hotmart, asistencia, setters, phases, salesKpis, salesVolume, salesRanking] = await Promise.all([
-    getOperationalKpis(tenantId, locationId, filters),
-    getFunnel(tenantId, locationId, filters),
-    getHotmartSummary(locationId, from, to),
-    getAttendanceSummary(locationId, launch),
-    getSettersSummary(locationId, filters),
-    listLaunchPhases(launch.id),
-    getLaunchSalesKpis(locationId, from, to),
-    getLaunchSalesVolume(locationId, from, to),
-    getLaunchSalesRanking(locationId, from, to),
-  ]);
+  const [operational, funnel, hotmart, asistencia, setters, phases, salesKpis, salesVolume, salesRanking, statusBreakdown, tribes, countries] =
+    await Promise.all([
+      getOperationalKpis(tenantId, locationId, filters),
+      getFunnel(tenantId, locationId, filters),
+      getHotmartSummary(locationId, from, to),
+      getAttendanceSummary(locationId, launch),
+      getSettersSummary(locationId, filters),
+      listLaunchPhases(launch.id),
+      getLaunchSalesKpis(locationId, from, to),
+      getLaunchSalesVolume(locationId, from, to),
+      getLaunchSalesRanking(locationId, from, to),
+      getLaunchStatusBreakdown(locationId, from, to),
+      getLaunchTribeBreakdown(locationId, from, to),
+      getLaunchCountryBreakdown(locationId, from, to),
+    ]);
 
   return {
     launch: { id: launch.id, name: launch.name, startDate: launch.startDate, endDate: launch.endDate, status: launch.status },
@@ -227,6 +244,9 @@ export async function getLaunchSummary(
     salesKpis,
     salesVolume,
     salesRanking,
+    statusBreakdown,
+    tribes,
+    countries,
     funnel,
     asistencia,
     setters,

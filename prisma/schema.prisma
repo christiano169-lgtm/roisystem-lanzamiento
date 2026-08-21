@@ -204,7 +204,9 @@ model Location {
   metaAdInsights   MetaAdInsight[]
   hotmartConnection HotmartConnection?
   hotmartSales     HotmartSale[]
+  hotmartSaleEvents HotmartSaleEvent[]
   hotmartOffers    HotmartOffer[]
+  tribeTags        TribeTag[]
   launches         Launch[]
   forms            Form[]
   formSubmissions  FormSubmission[]
@@ -324,6 +326,49 @@ model HotmartSale {
   @@unique([locationId, transactionId])
   @@index([locationId, purchaseDate])
   @@map("hotmart_sales")
+}
+
+// HotmartSale only ever holds the LATEST status per transaction (upserted
+// in place) — a cash ticket (BILLET_PRINTED) that later gets paid becomes
+// APPROVED in that row, erasing the fact a ticket was ever issued. This
+// table is append-only (one row per distinct status a transaction/cart
+// passes through) so "cuántos boletos se emitieron" and "cuántos carritos
+// abandonados terminaron comprando" can be answered from history instead of
+// a snapshot. `transactionId` is null for abandoned-cart events, which
+// aren't a Hotmart transaction at all (no purchase attempt was made).
+model HotmartSaleEvent {
+  id            String   @id @default(cuid())
+  locationId    String
+  transactionId String?
+  buyerEmail    String?
+  productName   String?
+  status        String
+  eventAt       DateTime @default(now())
+  raw           Json
+  createdAt     DateTime @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, status, eventAt])
+  @@index([locationId, buyerEmail])
+  @@map("hotmart_sale_events")
+}
+
+// Maps a GHL tag to a "tribu" label (a team/cohort a lead is grouped into
+// for a launch challenge) — same admin-mapping pattern as HotmartOffer,
+// since GHL tags carry no notion of "this tag represents a tribe" on their
+// own. Configured in Configuración → Lanzamientos → Tribus.
+model TribeTag {
+  id         String   @id @default(cuid())
+  locationId String
+  tagName    String
+  label      String
+  createdAt  DateTime @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, tagName])
+  @@map("tribe_tags")
 }
 
 // ---------------------------------------------------------------------------

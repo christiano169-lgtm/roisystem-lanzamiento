@@ -16,6 +16,7 @@ import {
   listLaunches,
   updateLaunch,
 } from './service.js';
+import { createTribeTag, deleteTribeTag, listTribeTags } from './segments.js';
 
 export const launchesRouter = Router();
 
@@ -200,6 +201,45 @@ launchesRouter.delete('/:id/attendance-rules/:ruleId', requireRole('admin', 'man
     await assertOwnedLaunch(req.auth!.tenantId, req.params.id!);
     const ok = await deleteAttendanceRule(req.params.id!, req.params.ruleId!);
     if (!ok) return res.status(404).json({ error: 'Attendance rule not found' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Tribes are location-wide (a tag→label mapping), not per-launch — same
+// scope as HotmartOffer, mounted here since it's configured next to
+// Lanzamientos in Configuración.
+launchesRouter.get('/tribes', async (req, res, next) => {
+  try {
+    const q = listQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const tribes = await listTribeTags(q.locationId);
+    res.json({ tribes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const createTribeSchema = z.object({ locationId: z.string().min(1), tagName: z.string().min(1), label: z.string().min(1) });
+
+launchesRouter.post('/tribes', requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    const input = createTribeSchema.parse(req.body);
+    await assertOwnedLocation(req.auth!.tenantId, input.locationId);
+    const tribe = await createTribeTag(input.locationId, { tagName: input.tagName, label: input.label });
+    res.status(201).json({ tribe });
+  } catch (err) {
+    next(err);
+  }
+});
+
+launchesRouter.delete('/tribes/:tribeId', requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    const q = listQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const ok = await deleteTribeTag(q.locationId, req.params.tribeId!);
+    if (!ok) return res.status(404).json({ error: 'Tribe not found' });
     res.status(204).end();
   } catch (err) {
     next(err);

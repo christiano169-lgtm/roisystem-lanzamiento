@@ -1560,6 +1560,91 @@ function HotmartOffersSection() {
   );
 }
 
+interface TribeTag {
+  id: string;
+  tagName: string;
+  label: string;
+}
+
+function TribeTagsSection() {
+  const { locationId } = useOutletContext<OutletContext>();
+  const [tribes, setTribes] = useState<TribeTag[]>([]);
+  const [form, setForm] = useState({ tagName: '', label: '' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function load() {
+    apiGet<{ tribes: TribeTag[] }>(`/api/launches/tribes?locationId=${locationId}`).then((res) => setTribes(res.tribes));
+  }
+
+  useEffect(load, [locationId]);
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    if (!form.tagName.trim() || !form.label.trim()) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiPost('/api/launches/tribes', { locationId, ...form });
+      setForm({ tagName: '', label: '' });
+      load();
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'No se pudo agregar la tribu.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await apiDelete(`/api/launches/tribes/${id}?locationId=${locationId}`);
+    load();
+  }
+
+  return (
+    <SectionCard
+      title="Tribus"
+      description="GHL no tiene un concepto de 'tribu' propio — mapeá acá qué etiqueta (tag) de GHL representa a cada tribu para que el Panel ejecutivo muestre cuántos leads van en cada una. El nombre del tag debe coincidir exactamente con el que existe en GHL."
+    >
+      <div className="mb-4 flex flex-col gap-1.5">
+        {tribes.map((t) => (
+          <div key={t.id} className="flex items-center gap-3 rounded-md border border-border2 bg-card px-3.5 py-2.5 text-[12.5px]">
+            <span className="w-40 shrink-0 truncate font-semibold">{t.label}</span>
+            <span className="flex-1 truncate font-mono text-accent">{t.tagName}</span>
+            <button onClick={() => remove(t.id)} className="text-[11px] text-gray-500 hover:text-red-400">
+              Eliminar
+            </button>
+          </div>
+        ))}
+        {tribes.length === 0 && <p className="text-[12px] text-gray-500">Sin tribus mapeadas todavía.</p>}
+      </div>
+      <form onSubmit={add} className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Nombre de la tribu</label>
+          <input
+            value={form.label}
+            onChange={(e) => setForm({ ...form, label: e.target.value })}
+            placeholder="Ej: Tribu Fuego"
+            className="w-44 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Tag en GHL</label>
+          <input
+            value={form.tagName}
+            onChange={(e) => setForm({ ...form, tagName: e.target.value })}
+            placeholder="tribu-fuego"
+            className="w-52 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+          />
+        </div>
+        <button type="submit" disabled={saving} className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60">
+          {saving ? 'Guardando…' : '+ Agregar tribu'}
+        </button>
+      </form>
+      {message && <p className="mt-2 text-xs text-red-400">{message}</p>}
+    </SectionCard>
+  );
+}
+
 const WIZARD_STEPS = [
   { id: 'conexion', label: 'Conexión GHL' },
   { id: 'equipo', label: 'Equipo y asesores' },
@@ -1601,6 +1686,7 @@ export default function Settings() {
           <>
             <LaunchesSection />
             <HotmartOffersSection />
+            <TribeTagsSection />
           </>
         )}
         {step === 'ia' && isAdmin && (

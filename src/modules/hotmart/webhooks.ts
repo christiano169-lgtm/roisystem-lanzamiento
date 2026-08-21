@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logger } from '../../config/logger.js';
 import { prisma } from '../../db/prisma.js';
 import { findLocationIdByWebhookHottok } from './connectionService.js';
-import { upsertHotmartSale, type HotmartSaleItem } from './sync/sales.js';
+import { upsertHotmartSale, recordSaleStatusEvent, type HotmartSaleItem } from './sync/sales.js';
 
 /**
  * NOTE: confirmed against Hotmart's own help center that the "Hottok" shown
@@ -43,6 +43,17 @@ const SALE_EVENTS = new Set([
   'PURCHASE_DELAYED',
 ]);
 
+// Best-effort, same caveat as the rest of this file: "CART_ABANDONMENT" is
+// Hotmart's documented webhook topic for cart abandonment, but the payload
+// shape below hasn't been confirmed against a live event yet — there's no
+// `purchase` transaction (nothing was bought), so it's read defensively and
+// logged to HotmartSaleEvent only, not HotmartSale.
+interface HotmartAbandonedCartPayload {
+  buyer?: { email?: string; name?: string };
+  product?: { id?: number; name?: string };
+  [key: string]: unknown;
+}
+
 hotmartWebhookRouter.post('/:locationId', async (req, res) => {
   const { locationId } = req.params;
   const payload = req.body as HotmartWebhookPayload;
@@ -63,6 +74,9 @@ hotmartWebhookRouter.post('/:locationId', async (req, res) => {
 
   if (payload.event && SALE_EVENTS.has(payload.event) && payload.data) {
     await upsertHotmartSale(locationId, payload.data);
+  } else if (payload.event === 'CART_ABANDONMENT') {
+    const data = payload.data as HotmartAbandonedCartPayload | undefined;
+    await recordSaleStatusEvent(locationId, null, data?.buyer?.email ?? null, data?.product?.name ?? null, 'ABANDONED_CART', data ?? {});
   } else {
     logger.info({ event: payload.event, locationId }, 'Unhandled or dataless Hotmart webhook event');
   }

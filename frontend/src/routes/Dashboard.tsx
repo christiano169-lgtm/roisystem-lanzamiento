@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { apiGet } from '../lib/api';
-import { formatDate, formatMinutes, formatNumber, formatUsd } from '../lib/format';
+import { formatDateOnly, formatMinutes, formatNumber, formatUsd } from '../lib/format';
 import ObjectionsWidget from '../components/ObjectionsWidget';
 import type { OutletContext } from './AppLayout';
 
@@ -58,6 +58,30 @@ interface SetterRow {
   primeraRespuestaMinutosPromedio: number | null;
 }
 
+interface StatusBreakdownBucket {
+  plus: number;
+  general: number;
+}
+
+interface LaunchStatusBreakdown {
+  aprobadas: StatusBreakdownBucket;
+  abandonados: StatusBreakdownBucket;
+  canceladas: StatusBreakdownBucket;
+  ticketsEmitidos: StatusBreakdownBucket;
+  recovery: { total: number; recuperados: number; pendientes: number };
+}
+
+interface TribeRow {
+  tagName: string;
+  label: string;
+  count: number;
+}
+
+interface CountryRow {
+  country: string;
+  count: number;
+}
+
 interface LaunchSummary {
   launch: Launch;
   phases: Phase[];
@@ -65,6 +89,9 @@ interface LaunchSummary {
   salesKpis: SalesKpis;
   salesVolume: SalesVolumeRow[];
   salesRanking: SalesRankingRow[];
+  statusBreakdown: LaunchStatusBreakdown;
+  tribes: TribeRow[];
+  countries: CountryRow[];
   setters: SetterRow[];
 }
 
@@ -120,6 +147,47 @@ function VolumeChart({ days }: { days: SalesVolumeRow[] }) {
             <span className="h-2 w-2 rounded-sm" style={{ background: COLORS.orderBumps }} /> Order bumps
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusBreakdownCard({ label, bucket, color }: { label: string; bucket: StatusBreakdownBucket; color: string }) {
+  return (
+    <div className="rounded-[7px] border border-border bg-panel px-3.5 py-3">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
+      <div className="mt-1.5 flex items-baseline gap-3">
+        <div>
+          <span className="text-[20px] font-bold" style={{ color }}>
+            {formatNumber(bucket.plus)}
+          </span>
+          <span className="ml-1 text-[10px] text-gray-500">Plus</span>
+        </div>
+        <div>
+          <span className="text-[16px] font-semibold text-gray-300">{formatNumber(bucket.general)}</span>
+          <span className="ml-1 text-[10px] text-gray-500">General</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HorizontalBarChart({ title, rows, emptyLabel }: { title: string; rows: { label: string; count: number }[]; emptyLabel: string }) {
+  const max = Math.max(1, ...rows.map((r) => r.count));
+  return (
+    <div className="rounded-[7px] border border-border bg-panel p-5">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</span>
+      <div className="mt-4 flex flex-col gap-2.5">
+        {rows.length === 0 && <span className="text-[12px] text-gray-600">{emptyLabel}</span>}
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-3">
+            <span className="w-28 shrink-0 truncate text-[12px] text-gray-400">{r.label}</span>
+            <div className="h-4 flex-1 overflow-hidden rounded-sm bg-white/5">
+              <div className="roi-in h-full rounded-sm bg-gradient-to-r from-sky-500 to-accent" style={{ width: `${(r.count / max) * 100}%` }} />
+            </div>
+            <span className="w-10 shrink-0 text-right text-[12px] font-semibold text-gray-300">{formatNumber(r.count)}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -200,6 +268,11 @@ export default function Dashboard() {
   const embudoVentas = summary?.embudoVentas ?? { cerrada: 0, ofertada: 0, noOfertada: 0 };
   const salesVolume = summary?.salesVolume ?? [];
   const salesRanking = summary?.salesRanking ?? [];
+  const zeroBucket: StatusBreakdownBucket = { plus: 0, general: 0 };
+  const statusBreakdown =
+    summary?.statusBreakdown ?? { aprobadas: zeroBucket, abandonados: zeroBucket, canceladas: zeroBucket, ticketsEmitidos: zeroBucket, recovery: { total: 0, recuperados: 0, pendientes: 0 } };
+  const tribes = summary?.tribes ?? [];
+  const countries = summary?.countries ?? [];
   const noLocation = !locationId;
   const noLaunchesYet = !noLocation && launches !== null && launches.length === 0;
 
@@ -244,7 +317,7 @@ export default function Dashboard() {
         </select>
         {currentRange && (
           <span className="text-[12px] text-gray-500">
-            {formatDate(currentRange.startDate)} → {formatDate(currentRange.endDate)}
+            {formatDateOnly(currentRange.startDate)} → {formatDateOnly(currentRange.endDate)}
           </span>
         )}
         {loading && <span className="text-[12px] text-gray-500">Cargando…</span>}
@@ -299,6 +372,37 @@ export default function Dashboard() {
           <KpiCard label="Ofertada" value={formatNumber(embudoVentas.ofertada)} color="#38bdf8" />
           <KpiCard label="No ofertada" value={formatNumber(embudoVentas.noOfertada)} color="#f59e0b" />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2.5">
+        <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+          <span>↳</span> Dinero sobre la mesa
+        </span>
+        <div className="roi-stagger grid grid-cols-2 gap-2.5 md:grid-cols-4">
+          <StatusBreakdownCard label="Compras aprobadas" bucket={statusBreakdown.aprobadas} color="#34d399" />
+          <StatusBreakdownCard label="Carritos abandonados" bucket={statusBreakdown.abandonados} color="#f59e0b" />
+          <StatusBreakdownCard label="Canceladas" bucket={statusBreakdown.canceladas} color="#ef4444" />
+          <StatusBreakdownCard label="Ticket pago en efectivo" bucket={statusBreakdown.ticketsEmitidos} color="#38bdf8" />
+        </div>
+        <div className="rounded-[7px] border border-border bg-panel px-4 py-3 text-[13px]">
+          De <span className="font-bold text-amber-400">{formatNumber(statusBreakdown.recovery.total)}</span> personas con dinero sobre la mesa
+          (canceladas + abandonados + ticket en efectivo),{' '}
+          <span className="font-bold text-emerald-400">{formatNumber(statusBreakdown.recovery.recuperados)}</span> ya completaron la compra y{' '}
+          <span className="font-bold text-red-400">{formatNumber(statusBreakdown.recovery.pendientes)}</span> todavía no.
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <HorizontalBarChart
+          title="Leads por tribu"
+          rows={tribes.map((t) => ({ label: t.label, count: t.count }))}
+          emptyLabel="Sin tribus configuradas — mapealas en Configuración → Lanzamientos → Tribus."
+        />
+        <HorizontalBarChart
+          title="Leads por país"
+          rows={countries.slice(0, 10).map((c) => ({ label: c.country, count: c.count }))}
+          emptyLabel="Sin datos de país todavía."
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

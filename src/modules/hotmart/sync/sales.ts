@@ -46,6 +46,7 @@ export async function upsertHotmartSale(locationId: string, item: HotmartSaleIte
   }
   try {
     const purchaseDateMs = item.purchase?.approved_date ?? item.purchase?.order_date;
+    const status = item.purchase?.status ?? null;
     await prisma.hotmartSale.upsert({
       where: { locationId_transactionId: { locationId, transactionId } },
       create: {
@@ -55,22 +56,54 @@ export async function upsertHotmartSale(locationId: string, item: HotmartSaleIte
         buyerEmail: item.buyer?.email ?? null,
         priceValue: item.purchase?.price?.value ?? 0,
         currency: item.purchase?.price?.currency_value ?? null,
-        status: item.purchase?.status ?? null,
+        status,
         purchaseDate: purchaseDateMs ? new Date(purchaseDateMs) : null,
         raw: item as object,
       },
       update: {
         productName: item.product?.name ?? null,
-        status: item.purchase?.status ?? null,
+        status,
         raw: item as object,
       },
     });
+    await recordSaleStatusEvent(locationId, transactionId, item.buyer?.email ?? null, item.product?.name ?? null, status, item);
     return true;
   } catch (err) {
     logger.error({ err, transactionId }, 'Failed to upsert Hotmart sale');
     return false;
   }
 }
+
+/**
+ * Append-only log of every distinct status a transaction passes through —
+ * see HotmartSaleEvent's schema comment for why this can't just be read
+ * off HotmartSale.status. Skips the insert when the transaction's most
+ * recent logged status already matches, so repeated polls of an unchanged
+ * sale don't spam the table.
+ */
+async function recordSaleStatusEvent(
+  locationId: string,
+  transactionId: string | null,
+  buyerEmail: string | null,
+  productName: string | null,
+  status: string | null,
+  raw: unknown,
+): Promise<void> {
+  if (!status) return;
+  if (transactionId) {
+    const last = await prisma.hotmartSaleEvent.findFirst({
+      where: { locationId, transactionId },
+      orderBy: { eventAt: 'desc' },
+      select: { status: true },
+    });
+    if (last?.status === status) return;
+  }
+  await prisma.hotmartSaleEvent.create({
+    data: { locationId, transactionId, buyerEmail, productName, status, raw: raw as object },
+  });
+}
+
+export { recordSaleStatusEvent };
 
 /**
  * Pulls the last `LOOKBACK_DAYS` of sales for a Location's connected Hotmart
