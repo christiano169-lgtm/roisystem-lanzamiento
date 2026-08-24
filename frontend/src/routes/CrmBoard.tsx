@@ -49,6 +49,8 @@ export default function CrmBoard() {
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [owners, setOwners] = useState<GhlUser[]>([]);
   const [ownerFilter, setOwnerFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ContactRow['conversationStatus'] | ''>('');
+  const [tagFilter, setTagFilter] = useState('');
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -91,7 +93,14 @@ export default function CrmBoard() {
     };
   }, [locationId, window_, search]);
 
-  const visibleContacts = ownerFilter ? contacts.filter((c) => c.ownerGhlId === ownerFilter) : contacts;
+  const allTags = Array.from(new Set(contacts.flatMap((c) => (c.tags ?? []).map((t) => t.tag.name)))).sort();
+
+  const visibleContacts = contacts.filter((c) => {
+    if (ownerFilter && c.ownerGhlId !== ownerFilter) return false;
+    if (statusFilter && c.conversationStatus !== statusFilter) return false;
+    if (tagFilter && !(c.tags ?? []).some((t) => t.tag.name === tagFilter)) return false;
+    return true;
+  });
 
   async function syncNow() {
     if (!locationId) return;
@@ -137,7 +146,41 @@ export default function CrmBoard() {
             </option>
           ))}
         </select>
-        <span className="text-[12px] text-gray-500">{total} contactos</span>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as ContactRow['conversationStatus'] | '')}
+          className="rounded-md border border-border2 bg-input px-3 py-2.5 text-sm outline-none focus:border-accent/60"
+        >
+          <option value="">Todos los estados</option>
+          <option value="atendido">Atendido</option>
+          <option value="pendiente">Sin responder</option>
+          <option value="sin_conversacion">Sin conversación</option>
+        </select>
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="rounded-md border border-border2 bg-input px-3 py-2.5 text-sm outline-none focus:border-accent/60"
+        >
+          <option value="">Todas las etiquetas</option>
+          {allTags.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        {(ownerFilter || statusFilter || tagFilter) && (
+          <button
+            onClick={() => {
+              setOwnerFilter('');
+              setStatusFilter('');
+              setTagFilter('');
+            }}
+            className="text-[12px] text-gray-500 hover:text-gray-300"
+          >
+            Limpiar filtros
+          </button>
+        )}
+        <span className="text-[12px] text-gray-500">{visibleContacts.length} de {total} contactos</span>
         {loading && <span className="text-[12px] text-gray-500">Cargando…</span>}
         <button
           onClick={syncNow}
