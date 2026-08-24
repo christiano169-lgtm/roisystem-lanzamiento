@@ -157,6 +157,13 @@ model Location {
   name          String
   businessLine  BusinessLine @default(high_ticket)
   syncStatus    SyncStatus   @default(pending)
+  // Set the instant a backfill is enqueued (before the worker even picks it
+  // up) so POST /:id/sync can atomically reject a second concurrent
+  // backfill for the same location — see that route's comment. Doubles as
+  // a staleness marker: if a worker crashes/redeploys mid-backfill and
+  // never clears syncStatus, a sync request older than the stale threshold
+  // is allowed to self-heal instead of being permanently blocked.
+  syncingSince  DateTime?
   lastSyncedAt  DateTime?
   // Fase 6: replaced Agency-level OAuth (GhlConnection, removed) with a
   // per-Location GHL Private Integration Token — the client generates this

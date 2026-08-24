@@ -83,15 +83,25 @@ locationsRouter.get('/:id/sync-jobs', async (req, res, next) => {
   }
 });
 
+// A worker crash or mid-backfill redeploy can leave syncStatus stuck at
+// 'syncing' forever (runFullBackfillForLocation only clears it in its own
+// try/catch, which never runs if the process dies) — treat it as stale
+// past this and allow a fresh sync instead of blocking permanently.
+const STALE_SYNC_MS = 45 * 60 * 1000;
+
 /**
  * Enqueues a full backfill (pipelines, contacts, opportunities, calls,
- * appointments). Guarded against overlapping runs for the same location —
- * enqueueLocationBackfill's jobId used to include Date.now(), so clicking
- * "Sincronizar" twice (or from two open tabs) created two fully concurrent
- * backfills, each paging GHL independently. That doubled request volume is
- * what was tripping GHL's rate limit and failing conversations with 429 —
- * confirmed 2026-08-24 against production: two "contacts" SyncJob rows
- * running at once, 6 seconds apart.
+ * appointments). Guarded against overlapping runs for the same location
+ * with an atomic UPDATE ... WHERE on Location.syncStatus/syncingSince —
+ * checking the SyncJob table (an earlier version of this guard) wasn't
+ * enough: SyncJob rows are only created once the *worker* picks up the
+ * job, so two /sync requests landing seconds apart (while the first
+ * backfill is still queued, not yet started) both saw "nothing running"
+ * and both enqueued. Confirmed in production 2026-08-24: every entity
+ * synced in duplicate, ~15-20s apart, even after the SyncJob-based guard
+ * was deployed. Flipping syncStatus synchronously in this request handler
+ * (not in the worker) closes that window — Postgres serializes the UPDATE,
+ * so only one of two simultaneous requests can win it.
  */
 locationsRouter.post('/:id/sync', requireRole('admin', 'manager'), async (req, res, next) => {
   try {
@@ -100,10 +110,15 @@ locationsRouter.post('/:id/sync', requireRole('admin', 'manager'), async (req, r
     });
     if (!location) return res.status(404).json({ error: 'Location not found' });
 
-    const alreadyRunning = await prisma.syncJob.findFirst({
-      where: { locationId: location.id, status: { in: ['queued', 'running'] } },
+    const staleBefore = new Date(Date.now() - STALE_SYNC_MS);
+    const flip = await prisma.location.updateMany({
+      where: {
+        id: location.id,
+        OR: [{ syncStatus: { not: 'syncing' } }, { syncingSince: null }, { syncingSince: { lt: staleBefore } }],
+      },
+      data: { syncStatus: 'syncing', syncingSince: new Date() },
     });
-    if (alreadyRunning) {
+    if (flip.count === 0) {
       return res.status(202).json({ message: 'Ya hay una sincronización en curso para esta subcuenta.', locationId: location.id });
     }
 
