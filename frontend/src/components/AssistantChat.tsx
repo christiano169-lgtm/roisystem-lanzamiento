@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { apiPost, ApiError } from '../lib/api';
-import { daysAgoISODate } from '../lib/format';
+import { useActiveLaunch } from '../lib/useActiveLaunch';
 
 interface ChatMsg {
   who: 'user' | 'ia';
@@ -11,22 +11,27 @@ export default function AssistantChat({ locationId }: { locationId: string }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const launch = useActiveLaunch(locationId);
   const [msgs, setMsgs] = useState<ChatMsg[]>([
-    { who: 'ia', text: 'Hola, soy tu analista. Pregúntame algo sobre tus datos del último mes, por ejemplo: "¿quién tiene mejor tasa de agendamiento?"' },
+    { who: 'ia', text: 'Hola, soy tu analista. Pregúntame algo sobre el lanzamiento activo, por ejemplo: "¿cuántos con dinero sobre la mesa ya compraron?"' },
   ]);
 
   async function send(e?: FormEvent) {
     e?.preventDefault();
     const question = input.trim();
     if (!question || loading) return;
+    if (!launch) {
+      setMsgs((m) => [...m, { who: 'user', text: question }, { who: 'ia', text: 'Todavía no hay ningún lanzamiento creado — creá uno en Configuración → Lanzamientos primero.' }]);
+      setInput('');
+      return;
+    }
     setInput('');
     setMsgs((m) => [...m, { who: 'user', text: question }]);
     setLoading(true);
     try {
       const res = await apiPost<{ answer: string }>('/api/assistant/ask', {
         locationId,
-        from: new Date(`${daysAgoISODate(30)}T00:00:00.000Z`).toISOString(),
-        to: new Date().toISOString(),
+        launchId: launch.id,
         question,
       });
       setMsgs((m) => [...m, { who: 'ia', text: res.answer }]);
