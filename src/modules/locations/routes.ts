@@ -83,13 +83,29 @@ locationsRouter.get('/:id/sync-jobs', async (req, res, next) => {
   }
 });
 
-/** Enqueues a full backfill (pipelines, contacts, opportunities, calls, appointments). */
+/**
+ * Enqueues a full backfill (pipelines, contacts, opportunities, calls,
+ * appointments). Guarded against overlapping runs for the same location —
+ * enqueueLocationBackfill's jobId used to include Date.now(), so clicking
+ * "Sincronizar" twice (or from two open tabs) created two fully concurrent
+ * backfills, each paging GHL independently. That doubled request volume is
+ * what was tripping GHL's rate limit and failing conversations with 429 —
+ * confirmed 2026-08-24 against production: two "contacts" SyncJob rows
+ * running at once, 6 seconds apart.
+ */
 locationsRouter.post('/:id/sync', requireRole('admin', 'manager'), async (req, res, next) => {
   try {
     const location = await prisma.location.findFirst({
       where: { id: req.params.id, tenantId: req.auth!.tenantId },
     });
     if (!location) return res.status(404).json({ error: 'Location not found' });
+
+    const alreadyRunning = await prisma.syncJob.findFirst({
+      where: { locationId: location.id, status: { in: ['queued', 'running'] } },
+    });
+    if (alreadyRunning) {
+      return res.status(202).json({ message: 'Ya hay una sincronización en curso para esta subcuenta.', locationId: location.id });
+    }
 
     await enqueueLocationBackfill({ tenantId: req.auth!.tenantId, locationId: location.id });
     res.status(202).json({ message: 'Backfill enqueued', locationId: location.id });
