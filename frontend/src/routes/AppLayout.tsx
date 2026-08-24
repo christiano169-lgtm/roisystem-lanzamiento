@@ -35,6 +35,7 @@ export const NAV = [
   { to: '/app/overview', label: 'Resumen', icon: IconChart },
   { to: '/app/me', label: 'Mi panel', icon: IconUser },
   { to: '/app/embudo', label: 'Embudo', icon: IconChart },
+  { to: '/app/rendimiento', label: 'Rendimiento', icon: IconChart },
   { to: '/app/ventas-hotmart', label: 'Ventas Hotmart', icon: IconChart },
   { to: '/app/pagos-efectivo', label: 'Pagos en efectivo', icon: IconInbox },
   { to: '/app/crm', label: 'CRM', icon: IconUser },

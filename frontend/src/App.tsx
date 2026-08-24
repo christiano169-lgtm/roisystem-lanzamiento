@@ -15,6 +15,7 @@ import Bandeja from './routes/Bandeja';
 import MyPanel from './routes/MyPanel';
 import Documentacion from './routes/Documentacion';
 import Embudo from './routes/Embudo';
+import Rendimiento from './routes/Rendimiento';
 import Adquisicion from './routes/Adquisicion';
 import Platform from './routes/Platform';
 
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="me" element={<MyPanel />} />
         <Route path="docs" element={<Documentacion />} />
         <Route path="embudo" element={<Embudo />} />
+        <Route path="rendimiento" element={<Rendimiento />} />
         <Route path="adquisicion" element={<Adquisicion />} />
         <Route path="payments" element={<Payments />} />
         <Route path="settings" element={<Settings />} />

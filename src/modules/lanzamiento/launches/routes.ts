@@ -10,6 +10,7 @@ import {
   deleteAttendanceRule,
   deleteLaunch,
   deleteLaunchPhase,
+  getLaunchesComparison,
   getLaunchSummary,
   listAttendanceRules,
   listLaunchPhases,
@@ -97,6 +98,17 @@ launchesRouter.delete('/:id', requireRole('admin', 'manager'), async (req, res, 
     const ok = await deleteLaunch(q.locationId, req.params.id!);
     if (!ok) return res.status(404).json({ error: 'Launch not found' });
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+launchesRouter.get('/comparison', async (req, res, next) => {
+  try {
+    const q = listQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const rows = await getLaunchesComparison(q.locationId);
+    res.json({ rows });
   } catch (err) {
     next(err);
   }

@@ -27,6 +27,55 @@ export async function listLaunches(locationId: string) {
   return prisma.launch.findMany({ where: { locationId }, orderBy: { startDate: 'desc' } });
 }
 
+export interface LaunchComparisonRow {
+  id: string;
+  name: string;
+  startDate: Date;
+  endDate: Date;
+  status: LaunchStatus;
+  comprasAprobadas: number;
+  ingresoBruto: number;
+  netoProductor: number;
+  ticketPromedio: number;
+  leadsGestionados: number;
+  conversionPct: number;
+  aprobadasPlus: number;
+  aprobadasGeneral: number;
+}
+
+/**
+ * "Rendimiento" — Panel ejecutivo is scoped to one launch at a time; this is
+ * the launch-over-launch view, so an agency can see whether the last
+ * lanzamiento did better or worse than the ones before it.
+ */
+export async function getLaunchesComparison(locationId: string): Promise<LaunchComparisonRow[]> {
+  const launches = await listLaunches(locationId);
+  return Promise.all(
+    launches.map(async (launch) => {
+      const [salesKpis, statusBreakdown] = await Promise.all([
+        getLaunchSalesKpis(locationId, launch.startDate, launch.endDate),
+        getLaunchStatusBreakdown(locationId, launch.startDate, launch.endDate),
+      ]);
+      const totalVentas = salesKpis.comprasAprobadas + salesKpis.upgradesVip + salesKpis.orderBumps;
+      return {
+        id: launch.id,
+        name: launch.name,
+        startDate: launch.startDate,
+        endDate: launch.endDate,
+        status: launch.status,
+        comprasAprobadas: salesKpis.comprasAprobadas,
+        ingresoBruto: salesKpis.ingresoBruto,
+        netoProductor: salesKpis.netoProductor,
+        ticketPromedio: salesKpis.ticketPromedio,
+        leadsGestionados: salesKpis.leadsGestionados,
+        conversionPct: salesKpis.leadsGestionados > 0 ? Math.round((totalVentas / salesKpis.leadsGestionados) * 1000) / 10 : 0,
+        aprobadasPlus: statusBreakdown.aprobadas.plus,
+        aprobadasGeneral: statusBreakdown.aprobadas.general,
+      };
+    }),
+  );
+}
+
 export async function createLaunch(locationId: string, input: LaunchInput) {
   return prisma.launch.create({
     data: {
