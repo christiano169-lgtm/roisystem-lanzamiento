@@ -8,7 +8,7 @@ export const teamRouter = Router();
 
 teamRouter.use(requireAuth);
 
-const SAFE_SELECT = { id: true, email: true, role: true, ghlUserId: true, allowedPages: true, createdAt: true } as const;
+const SAFE_SELECT = { id: true, email: true, username: true, role: true, ghlUserId: true, allowedPages: true, createdAt: true } as const;
 
 /** Control del sistema → "Equipo y asesores". Scoped to the caller's own tenant (unlike /api/platform, which is cross-tenant and admin-of-admins only). */
 teamRouter.get('/', async (req, res, next) => {
@@ -22,6 +22,7 @@ teamRouter.get('/', async (req, res, next) => {
 
 const createSchema = z.object({
   email: z.string().email(),
+  username: z.string().min(3).optional(),
   password: z.string().min(8),
   role: z.enum(['admin', 'manager', 'asesor']),
   ghlUserId: z.string().min(1).optional(),
@@ -35,12 +36,17 @@ teamRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const input = createSchema.parse(req.body);
     const existing = await prisma.user.findFirst({ where: { tenantId: req.auth!.tenantId, email: input.email } });
     if (existing) return res.status(409).json({ error: 'Ya existe un usuario con ese email en esta agencia.' });
+    if (input.username) {
+      const usernameTaken = await prisma.user.findFirst({ where: { username: input.username } });
+      if (usernameTaken) return res.status(409).json({ error: 'Ese nombre de usuario ya está en uso.' });
+    }
 
     const passwordHash = await hashPassword(input.password);
     const user = await prisma.user.create({
       data: {
         tenantId: req.auth!.tenantId,
         email: input.email,
+        username: input.username,
         passwordHash,
         role: input.role,
         ghlUserId: input.ghlUserId,

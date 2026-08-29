@@ -79,8 +79,11 @@ export async function registerFirstAdmin(input: { tenantName: string; email: str
   };
 }
 
-export async function login(input: { email: string; password: string }) {
-  const user = await prisma.user.findFirst({ where: { email: input.email }, include: { tenant: true } });
+export async function login(input: { identifier: string; password: string }) {
+  const user = await prisma.user.findFirst({
+    where: { OR: [{ email: input.identifier }, { username: input.identifier }] },
+    include: { tenant: true },
+  });
   if (!user) {
     throw new AuthError('Invalid credentials', 401);
   }

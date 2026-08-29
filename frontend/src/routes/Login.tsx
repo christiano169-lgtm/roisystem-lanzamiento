@@ -6,7 +6,7 @@ import { ApiError } from '../lib/api';
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,7 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(identifier, password);
       navigate('/app');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo iniciar sesión');
@@ -44,13 +44,13 @@ export default function Login() {
         <p className="mb-4 text-[13px] text-gray-500">Ingresa tus credenciales para acceder al dashboard</p>
 
         <div className="mb-3 w-full">
-          <label className="mb-2 block text-[13px] font-semibold">Email</label>
+          <label className="mb-2 block text-[13px] font-semibold">Correo o usuario</label>
           <input
-            type="email"
+            type="text"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="tu@email.com"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="tu@email.com o tu usuario"
             className="w-full rounded-md border border-[#202a3a] bg-[#111825] px-[17px] py-[15px] text-[13px] outline-none focus:border-[#1d4ed8]"
           />
         </div>

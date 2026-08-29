@@ -22,8 +22,11 @@ authRouter.post('/register', async (req, res, next) => {
   }
 });
 
+// `identifier` accepts either an email or a username (see User.username /
+// auth/service.ts login()) — kept as one free-text field rather than two,
+// since the client doesn't know in advance which kind was typed.
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string().min(1),
 });
 

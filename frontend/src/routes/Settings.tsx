@@ -661,6 +661,7 @@ function ProfileSection() {
 interface TeamMember {
   id: string;
   email: string;
+  username: string | null;
   role: 'admin' | 'manager' | 'asesor';
   ghlUserId: string | null;
   allowedPages: string[];
@@ -727,7 +728,7 @@ function EditMemberRow({ member, onSaved }: { member: TeamMember; onSaved: () =>
 
 function TeamSection() {
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [form, setForm] = useState({ email: '', password: '', role: 'asesor' as TeamMember['role'], ghlUserId: '', allowedPages: [] as string[] });
+  const [form, setForm] = useState({ email: '', username: '', password: '', role: 'asesor' as TeamMember['role'], ghlUserId: '', allowedPages: [] as string[] });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -743,9 +744,9 @@ function TeamSection() {
     setSaving(true);
     setMessage(null);
     try {
-      await apiPost('/api/team', { ...form, ghlUserId: form.ghlUserId || undefined });
-      setMessage(`Cuenta creada. Comparte estas credenciales: ${form.email} / ${form.password}`);
-      setForm({ email: '', password: '', role: 'asesor', ghlUserId: '', allowedPages: [] });
+      await apiPost('/api/team', { ...form, username: form.username || undefined, ghlUserId: form.ghlUserId || undefined });
+      setMessage(`Cuenta creada. Comparte estas credenciales: ${form.username || form.email} / ${form.password}`);
+      setForm({ email: '', username: '', password: '', role: 'asesor', ghlUserId: '', allowedPages: [] });
       load();
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : 'No se pudo crear el usuario.');
@@ -771,6 +772,15 @@ function TeamSection() {
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="w-56 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Usuario (opcional)</label>
+            <input
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              placeholder="ej: christiano169"
+              className="w-40 rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
             />
           </div>
           <div>
@@ -831,7 +841,10 @@ function TeamSection() {
             {members.map((m) => (
               <>
                 <tr key={m.id} className="border-t border-[#1e1e23]">
-                  <td className="px-4 py-2.5 font-semibold">{m.email}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="block font-semibold">{m.email}</span>
+                    {m.username && <span className="block text-[11px] text-gray-500">@{m.username}</span>}
+                  </td>
                   <td className="px-4 py-2.5">{ROLE_LABEL[m.role]}</td>
                   <td className="px-4 py-2.5 text-gray-400">{m.ghlUserId ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right">

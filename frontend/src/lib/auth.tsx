@@ -30,7 +30,7 @@ interface RegisterResponse {
 interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   register: (tenantName: string, email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -68,8 +68,8 @@ function persist(token: string, user: AuthUser) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => loadStoredUser());
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await apiPost<LoginResponse>('/auth/login', { email, password });
+  const login = useCallback(async (identifier: string, password: string) => {
+    const res = await apiPost<LoginResponse>('/auth/login', { identifier, password });
     persist(res.token, res.user);
     setUser(res.user);
   }, []);
