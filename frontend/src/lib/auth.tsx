@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { apiPost } from './api';
+import { isDemoMode } from './demoFixtures';
 
 export type UserRole = 'admin' | 'manager' | 'asesor';
 
@@ -39,7 +40,17 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const TOKEN_KEY = 'roisystem_token';
 const USER_KEY = 'roisystem_user';
 
+const DEMO_USER: AuthUser = {
+  id: 'demo-user',
+  email: 'demo@roisystem.app',
+  role: 'admin',
+  tenantId: 'demo-tenant',
+  isPlatformAdmin: false,
+  allowedPages: [],
+};
+
 function loadStoredUser(): AuthUser | null {
+  if (isDemoMode()) return DEMO_USER;
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try {
@@ -71,6 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Nothing to log out of in demo mode — there's no real session, and
+    // clearing `user` would strand the visitor on a login screen that
+    // can't actually authenticate against fixture data.
+    if (isDemoMode()) return;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setUser(null);

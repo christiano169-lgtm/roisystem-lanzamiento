@@ -1,3 +1,5 @@
+import { isDemoMode, resolveDemoResponse } from './demoFixtures';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
 export class ApiError extends Error {
@@ -20,6 +22,14 @@ function getToken(): string | null {
  * always replies `{ error: string }`).
  */
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (isDemoMode()) {
+    const method = options.method ?? 'GET';
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+    await new Promise((resolve) => setTimeout(resolve, 180 + Math.random() * 220));
+    const demo = resolveDemoResponse(path, method, body);
+    return (demo ?? {}) as T;
+  }
+
   const token = getToken();
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
