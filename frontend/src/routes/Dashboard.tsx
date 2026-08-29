@@ -95,11 +95,19 @@ interface LaunchSummary {
   setters: SetterRow[];
 }
 
+// Validated dark-mode categorical palette (see dataviz skill / references/palette.md)
+// — slots 1-3 (blue/orange/aqua) clear every adjacent AND all-pairs CVD gate, so
+// they're safe together in the same legend. The previous sky-blue/fuchsia pair
+// used here had a deutan ΔE of 0.3 (effectively indistinguishable).
+const SERIES = { blue: '#3987e5', orange: '#d95926', aqua: '#199e70', yellow: '#c98500', magenta: '#d55181', violet: '#9085e9', red: '#e66767' };
+
 function KpiCard({ label, value, color }: { label: string; value: string; color?: string }) {
+  const accent = color ?? SERIES.blue;
   return (
-    <div className="rounded-[7px] border border-border bg-panel px-3.5 py-3">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
-      <div className="mt-1 text-[20px] font-bold" style={{ color: color ?? '#22d3ee' }}>
+    <div className="group relative overflow-hidden rounded-[10px] border border-border bg-panel px-4 py-3.5 transition-colors hover:border-[color:var(--accent,theme(colors.border2))]" style={{ ['--accent' as string]: `${accent}55` }}>
+      <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: accent }} />
+      <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
+      <div className="mt-1.5 text-[22px] font-bold leading-none tracking-tight" style={{ color: accent }}>
         {value}
       </div>
     </div>
@@ -107,23 +115,45 @@ function KpiCard({ label, value, color }: { label: string; value: string; color?
 }
 
 function VolumeChart({ days }: { days: SalesVolumeRow[] }) {
+  const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(4, ...days.map((d) => Math.max(d.compras, d.upgrades, d.orderBumps)));
-  const COLORS = { compras: '#38bdf8', upgrades: '#e879f9', orderBumps: '#34d399' };
+  const COLORS = { compras: SERIES.blue, upgrades: SERIES.orange, orderBumps: SERIES.aqua };
+  const hovered = hover !== null ? days[hover] : null;
 
   return (
     <div className="flex gap-2.5">
-      <div className="flex h-[100px] flex-col justify-between text-[11px] text-gray-500">
+      <div className="flex h-[110px] flex-col justify-between text-[11px] text-gray-500">
         <span>{Math.round(max)}</span>
         <span>{Math.round(max / 2)}</span>
         <span>0</span>
       </div>
-      <div className="flex-1">
-        <div className="flex h-[100px] items-end gap-1 border-b border-dashed border-[#242429]">
+      <div className="relative flex-1">
+        {hovered && (
+          <div className="roi-in pointer-events-none absolute -top-2 z-10 -translate-y-full rounded-md border border-border2 bg-[#0e0e11] px-3 py-2 text-[11px] shadow-xl" style={{ left: `${((hover! + 0.5) / Math.max(1, days.length)) * 100}%`, transform: 'translate(-50%, -100%)' }}>
+            <div className="mb-1 font-semibold text-gray-300">{hovered.date}</div>
+            <div className="flex items-center gap-1.5" style={{ color: COLORS.compras }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: COLORS.compras }} /> Compras: {hovered.compras}
+            </div>
+            <div className="flex items-center gap-1.5" style={{ color: COLORS.upgrades }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: COLORS.upgrades }} /> Upgrades: {hovered.upgrades}
+            </div>
+            <div className="flex items-center gap-1.5" style={{ color: COLORS.orderBumps }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: COLORS.orderBumps }} /> Order bumps: {hovered.orderBumps}
+            </div>
+          </div>
+        )}
+        <div className="flex h-[110px] items-end gap-1 border-b border-dashed border-[#242429]">
           {days.map((d, i) => (
-            <div key={i} className="flex flex-1 items-end gap-[1.5px]">
-              <div className="roi-in flex-1 rounded-t-[1px]" style={{ height: `${Math.max(2, (d.compras / max) * 100)}px`, background: COLORS.compras }} />
-              <div className="roi-in flex-1 rounded-t-[1px]" style={{ height: `${Math.max(2, (d.upgrades / max) * 100)}px`, background: COLORS.upgrades }} />
-              <div className="roi-in flex-1 rounded-t-[1px]" style={{ height: `${Math.max(2, (d.orderBumps / max) * 100)}px`, background: COLORS.orderBumps }} />
+            <div
+              key={i}
+              className="flex flex-1 items-end gap-[1.5px] rounded-sm py-0.5 transition-colors"
+              style={{ background: hover === i ? '#ffffff08' : 'transparent' }}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+            >
+              <div className="roi-in flex-1 rounded-t-[2px]" style={{ height: `${Math.max(2, (d.compras / max) * 100)}px`, background: COLORS.compras }} />
+              <div className="roi-in flex-1 rounded-t-[2px]" style={{ height: `${Math.max(2, (d.upgrades / max) * 100)}px`, background: COLORS.upgrades }} />
+              <div className="roi-in flex-1 rounded-t-[2px]" style={{ height: `${Math.max(2, (d.orderBumps / max) * 100)}px`, background: COLORS.orderBumps }} />
             </div>
           ))}
           {days.length === 0 && <span className="pb-2 text-[12px] text-gray-600">Sin ventas en el rango.</span>}
@@ -154,17 +184,18 @@ function VolumeChart({ days }: { days: SalesVolumeRow[] }) {
 
 function StatusBreakdownCard({ label, bucket, color }: { label: string; bucket: StatusBreakdownBucket; color: string }) {
   return (
-    <div className="rounded-[7px] border border-border bg-panel px-3.5 py-3">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
+    <div className="relative overflow-hidden rounded-[10px] border border-border bg-panel px-4 py-3.5">
+      <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: color }} />
+      <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
       <div className="mt-1.5 flex items-baseline gap-3">
         <div>
-          <span className="text-[20px] font-bold" style={{ color }}>
+          <span className="text-[22px] font-bold leading-none" style={{ color }}>
             {formatNumber(bucket.plus)}
           </span>
           <span className="ml-1 text-[10px] text-gray-500">Plus</span>
         </div>
         <div>
-          <span className="text-[16px] font-semibold text-gray-300">{formatNumber(bucket.general)}</span>
+          <span className="text-[17px] font-semibold leading-none text-gray-300">{formatNumber(bucket.general)}</span>
           <span className="ml-1 text-[10px] text-gray-500">General</span>
         </div>
       </div>
@@ -349,17 +380,17 @@ export default function Dashboard() {
       <div className="flex flex-col gap-2.5">
         <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Ventas del lanzamiento</span>
         <div className="roi-stagger grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
-          <KpiCard label="Compras aprobadas" value={formatNumber(salesKpis.comprasAprobadas)} />
-          <KpiCard label="Upgrades a VIP" value={formatNumber(salesKpis.upgradesVip)} color="#c084fc" />
-          <KpiCard label="Order bumps" value={formatNumber(salesKpis.orderBumps)} color="#a855f7" />
-          <KpiCard label="Leads gestionados" value={formatNumber(salesKpis.leadsGestionados)} color="#818cf8" />
-          <KpiCard label="Ticket promedio" value={formatUsd(salesKpis.ticketPromedio)} color="#f59e0b" />
-          <KpiCard label="Ingreso bruto" value={formatUsd(salesKpis.ingresoBruto)} color="#34d399" />
-          <KpiCard label="Neto del productor" value={formatUsd(salesKpis.netoProductor)} color="#34d399" />
-          <KpiCard label="Ingreso por upgrade" value={formatUsd(salesKpis.ingresoPorUpgrade)} color="#c084fc" />
-          <KpiCard label="Ingreso por bumps" value={formatUsd(salesKpis.ingresoPorBumps)} color="#a855f7" />
-          <KpiCard label="Pendiente por cobrar" value={formatUsd(salesKpis.pendientePorCobrar)} color="#f59e0b" />
-          <KpiCard label="Reembolsos y disputas" value={formatUsd(salesKpis.reembolsosYDisputas)} color="#ef4444" />
+          <KpiCard label="Compras aprobadas" value={formatNumber(salesKpis.comprasAprobadas)} color={SERIES.aqua} />
+          <KpiCard label="Upgrades a VIP" value={formatNumber(salesKpis.upgradesVip)} color={SERIES.violet} />
+          <KpiCard label="Order bumps" value={formatNumber(salesKpis.orderBumps)} color={SERIES.magenta} />
+          <KpiCard label="Leads gestionados" value={formatNumber(salesKpis.leadsGestionados)} color={SERIES.blue} />
+          <KpiCard label="Ticket promedio" value={formatUsd(salesKpis.ticketPromedio)} color={SERIES.yellow} />
+          <KpiCard label="Ingreso bruto" value={formatUsd(salesKpis.ingresoBruto)} color={SERIES.aqua} />
+          <KpiCard label="Neto del productor" value={formatUsd(salesKpis.netoProductor)} color={SERIES.aqua} />
+          <KpiCard label="Ingreso por upgrade" value={formatUsd(salesKpis.ingresoPorUpgrade)} color={SERIES.violet} />
+          <KpiCard label="Ingreso por bumps" value={formatUsd(salesKpis.ingresoPorBumps)} color={SERIES.magenta} />
+          <KpiCard label="Pendiente por cobrar" value={formatUsd(salesKpis.pendientePorCobrar)} color={SERIES.yellow} />
+          <KpiCard label="Reembolsos y disputas" value={formatUsd(salesKpis.reembolsosYDisputas)} color={SERIES.red} />
         </div>
       </div>
 
@@ -368,9 +399,9 @@ export default function Dashboard() {
           <span>↳</span> Embudo de ventas
         </span>
         <div className="roi-stagger grid grid-cols-3 gap-2.5">
-          <KpiCard label="Cerrada" value={formatNumber(embudoVentas.cerrada)} color="#34d399" />
-          <KpiCard label="Ofertada" value={formatNumber(embudoVentas.ofertada)} color="#38bdf8" />
-          <KpiCard label="No ofertada" value={formatNumber(embudoVentas.noOfertada)} color="#f59e0b" />
+          <KpiCard label="Cerrada" value={formatNumber(embudoVentas.cerrada)} color={SERIES.aqua} />
+          <KpiCard label="Ofertada" value={formatNumber(embudoVentas.ofertada)} color={SERIES.blue} />
+          <KpiCard label="No ofertada" value={formatNumber(embudoVentas.noOfertada)} color={SERIES.yellow} />
         </div>
       </div>
 
@@ -379,10 +410,10 @@ export default function Dashboard() {
           <span>↳</span> Dinero sobre la mesa
         </span>
         <div className="roi-stagger grid grid-cols-2 gap-2.5 md:grid-cols-4">
-          <StatusBreakdownCard label="Compras aprobadas" bucket={statusBreakdown.aprobadas} color="#34d399" />
-          <StatusBreakdownCard label="Carritos abandonados" bucket={statusBreakdown.abandonados} color="#f59e0b" />
-          <StatusBreakdownCard label="Canceladas" bucket={statusBreakdown.canceladas} color="#ef4444" />
-          <StatusBreakdownCard label="Ticket pago en efectivo" bucket={statusBreakdown.ticketsEmitidos} color="#38bdf8" />
+          <StatusBreakdownCard label="Compras aprobadas" bucket={statusBreakdown.aprobadas} color={SERIES.aqua} />
+          <StatusBreakdownCard label="Carritos abandonados" bucket={statusBreakdown.abandonados} color={SERIES.yellow} />
+          <StatusBreakdownCard label="Canceladas" bucket={statusBreakdown.canceladas} color={SERIES.red} />
+          <StatusBreakdownCard label="Ticket pago en efectivo" bucket={statusBreakdown.ticketsEmitidos} color={SERIES.blue} />
         </div>
         <div className="rounded-[7px] border border-border bg-panel px-4 py-3 text-[13px]">
           De <span className="font-bold text-amber-400">{formatNumber(statusBreakdown.recovery.total)}</span> personas con dinero sobre la mesa
