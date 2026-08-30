@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { prisma } from '../../../db/prisma.js';
 import { logger } from '../../../config/logger.js';
 import type { SyncEntity } from '@prisma/client';
@@ -24,6 +25,22 @@ const ENTITY_SYNCERS: Record<SyncEntity, EntitySyncer> = {
 // Hard cap so a runaway pagination bug (e.g. a cursor that never advances)
 // can't loop forever and burn through GHL's rate limit.
 const MAX_PAGES_PER_RUN = 2000;
+
+// SyncJob.error used to store just `err.message` ("Request failed with
+// status code 401") — enough to know a request failed, not why. GHL's own
+// response body (e.g. a scope/auth message) is on `err.response.data` and
+// was being silently dropped, which made a real permission/config problem
+// indistinguishable from ordinary rate-limiting. Confirmed 2026-08-30: this
+// was the missing piece needed to diagnose the conversations sync's
+// persistent 401.
+function describeSyncError(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const body = err.response?.data;
+    const bodyStr = typeof body === 'string' ? body : body ? JSON.stringify(body) : undefined;
+    return [`HTTP ${err.response?.status ?? '?'} ${err.message}`, bodyStr].filter(Boolean).join(' — ');
+  }
+  return err instanceof Error ? err.message : String(err);
+}
 
 export async function runEntitySync(tenantId: string, locationId: string, ghlLocationId: string, entity: SyncEntity) {
   const syncer = ENTITY_SYNCERS[entity];
@@ -57,7 +74,7 @@ export async function runEntitySync(tenantId: string, locationId: string, ghlLoc
     logger.error({ err, locationId, entity }, 'Entity sync failed');
     await prisma.syncJob.update({
       where: { id: job.id },
-      data: { status: 'failed', finishedAt: new Date(), error: err instanceof Error ? err.message : String(err) },
+      data: { status: 'failed', finishedAt: new Date(), error: describeSyncError(err) },
     });
     throw err;
   }
@@ -74,8 +91,14 @@ export async function runFullBackfillForLocation(tenantId: string, locationId: s
     await syncPipelineStages(tenantId, locationId, location.ghlLocationId);
     await syncGhlUsers(tenantId, locationId, location.ghlLocationId);
 
+    // A short breather between entities — conversations has repeatedly
+    // failed on its very first request right as a large contacts/
+    // opportunities sync finished in the same second, consistent with
+    // GHL's rate limiter not having reset yet rather than a scope/config
+    // problem (all scopes confirmed present on the token).
     for (const entity of Object.keys(ENTITY_SYNCERS) as (keyof typeof ENTITY_SYNCERS)[]) {
       await runEntitySync(tenantId, locationId, location.ghlLocationId, entity);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     await prisma.location.update({
