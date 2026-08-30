@@ -42,6 +42,38 @@ function describeSyncError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Resuming point for the next full backfill of this entity — the last
+ * cursor any past run (completed OR failed, doesn't matter, both represent
+ * real progress) got to. Without this, every sync started at page 1 again
+ * and re-walked the entire history (16k+ contacts, 8k+ conversations),
+ * which is why a repeat sync took as long as the first one. Only useful
+ * for "catch up on new records"; it does NOT re-check old records for
+ * updates (e.g. an existing contact's tags changing) — that would need a
+ * GHL webhook, which this project doesn't have for contacts/opportunities/
+ * conversations (only Hotmart does).
+ *
+ * Scoped to contacts/opportunities/conversations — their cursors are all
+ * "position in ascending-date order," which is safe to resume. Appointments
+ * sweeps a fixed user×time-window grid where the terminal cursor means
+ * "no more users," so resuming from it would permanently return 0 records;
+ * forms paginates by page NUMBER, which shifts as new submissions arrive
+ * and only re-syncs the forms list itself when cursor is null. Neither is a
+ * "walk forward from a timestamp" cursor, so incremental resume doesn't
+ * apply to them the same way.
+ */
+const RESUMABLE_ENTITIES: SyncEntity[] = ['contacts', 'opportunities', 'conversations'];
+
+async function getResumeCursor(locationId: string, entity: SyncEntity): Promise<string | null> {
+  if (!RESUMABLE_ENTITIES.includes(entity)) return null;
+  const last = await prisma.syncJob.findFirst({
+    where: { locationId, entity, cursor: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    select: { cursor: true },
+  });
+  return last?.cursor ?? null;
+}
+
 export async function runEntitySync(tenantId: string, locationId: string, ghlLocationId: string, entity: SyncEntity) {
   const syncer = ENTITY_SYNCERS[entity];
 
@@ -49,7 +81,8 @@ export async function runEntitySync(tenantId: string, locationId: string, ghlLoc
     data: { locationId, entity, status: 'running', startedAt: new Date() },
   });
 
-  let cursor: string | null = null;
+  let cursor: string | null = await getResumeCursor(locationId, entity);
+  let lastKnownCursor: string | null = cursor;
   let totalSynced = 0;
 
   try {
@@ -57,10 +90,14 @@ export async function runEntitySync(tenantId: string, locationId: string, ghlLoc
       const result = await syncer.syncPage(tenantId, locationId, ghlLocationId, cursor);
       totalSynced += result.recordsSynced;
       cursor = result.nextCursor ?? null;
+      // Persist the last real position even once pagination ends — cursor
+      // itself goes null right when we're done, which would otherwise wipe
+      // out the resume point getResumeCursor() needs for next time.
+      if (cursor) lastKnownCursor = cursor;
 
       await prisma.syncJob.update({
         where: { id: job.id },
-        data: { recordsSynced: totalSynced, cursor },
+        data: { recordsSynced: totalSynced, cursor: lastKnownCursor },
       });
 
       if (!cursor) break;

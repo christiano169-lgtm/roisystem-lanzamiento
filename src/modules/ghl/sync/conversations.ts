@@ -72,7 +72,13 @@ export const conversationsSyncer: EntitySyncer = {
       }
     }
 
-    const nextCursor = data.conversations.length === PAGE_LIMIT && lastDateAdded ? JSON.stringify(lastDateAdded) : null;
+    // See contacts.ts's matching comment — computed whenever a conversation
+    // came back, not gated on a full page, so a terminal page still leaves
+    // a resume point for the next full backfill. This is the single
+    // biggest win for this syncer specifically: it's ~1 extra GHL request
+    // per conversation (~8000+ on this account), so re-walking from scratch
+    // every time was most of why a full sync took 20-40 minutes.
+    const nextCursor = lastDateAdded ? JSON.stringify(lastDateAdded) : null;
 
     return { recordsSynced: data.conversations.length, nextCursor };
   },

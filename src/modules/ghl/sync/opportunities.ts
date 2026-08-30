@@ -29,10 +29,11 @@ export const opportunitiesSyncer: EntitySyncer = {
       await upsertOpportunity(locationId, opp);
     }
 
-    const nextCursor =
-      data.opportunities.length === PAGE_LIMIT && data.meta?.startAfterId
-        ? JSON.stringify([data.meta.startAfterId, data.meta.startAfter])
-        : null;
+    // See contacts.ts's matching comment — computed whenever GHL echoes a
+    // cursor, not gated on a full page, so a terminal page still leaves a
+    // resume point for the next full backfill instead of forcing a re-walk
+    // of every opportunity from scratch each time.
+    const nextCursor = data.meta?.startAfterId ? JSON.stringify([data.meta.startAfterId, data.meta.startAfter]) : null;
 
     return { recordsSynced: data.opportunities.length, nextCursor };
   },

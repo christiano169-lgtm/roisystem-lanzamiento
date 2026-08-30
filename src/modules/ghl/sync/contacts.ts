@@ -30,9 +30,14 @@ export const contactsSyncer: EntitySyncer = {
       await upsertContact(locationId, contact);
     }
 
+    // Computed from the last record whenever ANY came back — not just on a
+    // full page — so a terminal (less-than-PAGE_LIMIT) page still leaves a
+    // resume point for the *next* full backfill. runEntitySync seeds the
+    // next run's starting cursor from here instead of always starting at 0,
+    // which used to mean every sync re-walked all 16k+ contacts from
+    // scratch even when almost nothing had changed.
     const last = data.contacts[data.contacts.length - 1];
-    const nextCursor =
-      data.contacts.length === PAGE_LIMIT && last?.dateAdded ? JSON.stringify([last.id, new Date(last.dateAdded).getTime()]) : null;
+    const nextCursor = last?.dateAdded ? JSON.stringify([last.id, new Date(last.dateAdded).getTime()]) : null;
 
     return { recordsSynced: data.contacts.length, nextCursor };
   },
