@@ -63,6 +63,10 @@ function ConnectionSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [tokenFieldFor, setTokenFieldFor] = useState<string | null>(null);
+  const [newToken, setNewToken] = useState('');
+  const [tokenSaving, setTokenSaving] = useState(false);
 
   async function connect(e: FormEvent) {
     e.preventDefault();
@@ -91,6 +95,31 @@ function ConnectionSection() {
     }
   }
 
+  async function resetLocation(id: string, name: string) {
+    if (!confirm(`Esto borra TODOS los datos sincronizados de "${name}" (contactos, conversaciones, ventas, todo) y desconecta el token de GHL. No se puede deshacer. ¿Continuar?`)) return;
+    setResettingId(id);
+    try {
+      await apiPost(`/api/locations/${id}/reset`);
+      await refreshLocations();
+      setTokenFieldFor(id);
+    } finally {
+      setResettingId(null);
+    }
+  }
+
+  async function saveNewToken(id: string) {
+    if (!newToken.trim()) return;
+    setTokenSaving(true);
+    try {
+      await apiPost(`/api/locations/${id}/token`, { privateIntegrationToken: newToken });
+      setNewToken('');
+      setTokenFieldFor(null);
+      await refreshLocations();
+    } finally {
+      setTokenSaving(false);
+    }
+  }
+
   return (
     <SectionCard
       title="Conexión GHL"
@@ -98,21 +127,52 @@ function ConnectionSection() {
     >
       <div className="mb-4 flex flex-col gap-2">
         {locations.map((l) => (
-          <div key={l.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border2 bg-card px-3.5 py-3">
-            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{l.name}</span>
-            <span className="font-mono text-[11px] text-gray-500">{l.ghlLocationId}</span>
-            <span className={`flex items-center gap-1.5 text-[11px] ${l.syncStatus === 'synced' ? 'text-emerald-400' : 'text-amber-400'}`}>
-              <span className={`roi-pulse h-[6px] w-[6px] rounded-full ${l.syncStatus === 'synced' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              {l.syncStatus}
-            </span>
-            {canSync && (
-              <button
-                onClick={() => syncNow(l.id)}
-                disabled={syncingId === l.id || l.syncStatus === 'syncing'}
-                className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-60"
-              >
-                {syncingId === l.id || l.syncStatus === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}
-              </button>
+          <div key={l.id} className="rounded-md border border-border2 bg-card px-3.5 py-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{l.name}</span>
+              <span className="font-mono text-[11px] text-gray-500">{l.ghlLocationId}</span>
+              <span className={`flex items-center gap-1.5 text-[11px] ${l.syncStatus === 'synced' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                <span className={`roi-pulse h-[6px] w-[6px] rounded-full ${l.syncStatus === 'synced' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                {l.syncStatus}
+              </span>
+              {canSync && (
+                <button
+                  onClick={() => syncNow(l.id)}
+                  disabled={syncingId === l.id || l.syncStatus === 'syncing'}
+                  className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-60"
+                >
+                  {syncingId === l.id || l.syncStatus === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => resetLocation(l.id, l.name)}
+                  disabled={resettingId === l.id}
+                  className="text-[11px] font-semibold text-red-400 hover:underline disabled:opacity-60"
+                >
+                  {resettingId === l.id ? 'Reiniciando…' : 'Reiniciar conexión'}
+                </button>
+              )}
+            </div>
+            {isAdmin && tokenFieldFor === l.id && (
+              <div className="mt-3 flex items-end gap-2 border-t border-border2 pt-3">
+                <div className="flex-1">
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Nuevo Private Integration Token</label>
+                  <input
+                    type="password"
+                    value={newToken}
+                    onChange={(e) => setNewToken(e.target.value)}
+                    className="w-full rounded border border-border2 bg-input px-3 py-2 text-sm outline-none focus:border-accent/60"
+                  />
+                </div>
+                <button
+                  onClick={() => saveNewToken(l.id)}
+                  disabled={tokenSaving}
+                  className="rounded-md bg-gradient-to-r from-sky-500 to-accent px-4 py-2 text-sm font-bold text-[#04212b] disabled:opacity-60"
+                >
+                  {tokenSaving ? 'Guardando…' : 'Reconectar'}
+                </button>
+              </div>
             )}
           </div>
         ))}

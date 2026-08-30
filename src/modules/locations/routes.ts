@@ -128,3 +128,49 @@ locationsRouter.post('/:id/sync', requireRole('admin', 'manager'), async (req, r
     next(err);
   }
 });
+
+/**
+ * Wipes every GHL/Hotmart-synced row for this location (contacts,
+ * conversations, opportunities, sales, etc.) and disconnects the GHL PIT —
+ * for testing/resetting a connection from scratch. Deliberately does NOT
+ * touch manually-configured data (Launches, TribeTags, HotmartOffers,
+ * team Users) — those aren't "synced," they're the admin's own setup.
+ * Scoped to this Location's id throughout, not a blanket TRUNCATE, so it's
+ * safe on a multi-location tenant. Order matters: children before parents
+ * that don't have onDelete: Cascade wired up for a locationId-scoped
+ * deleteMany (Contact→ContactTag and Conversation→Message do cascade, so
+ * those aren't listed separately).
+ */
+locationsRouter.post('/:id/reset', requireRole('admin'), async (req, res, next) => {
+  try {
+    const location = await prisma.location.findFirst({ where: { id: req.params.id, tenantId: req.auth!.tenantId } });
+    if (!location) return res.status(404).json({ error: 'Location not found' });
+
+    await prisma.$transaction([
+      prisma.qualityAnalysis.deleteMany({ where: { locationId: location.id } }),
+      prisma.videoCall.deleteMany({ where: { locationId: location.id } }),
+      prisma.call.deleteMany({ where: { locationId: location.id } }),
+      prisma.metaAdInsight.deleteMany({ where: { locationId: location.id } }),
+      prisma.hotmartSaleEvent.deleteMany({ where: { locationId: location.id } }),
+      prisma.hotmartSale.deleteMany({ where: { locationId: location.id } }),
+      prisma.formSubmission.deleteMany({ where: { locationId: location.id } }),
+      prisma.form.deleteMany({ where: { locationId: location.id } }),
+      prisma.opportunity.deleteMany({ where: { locationId: location.id } }),
+      prisma.appointment.deleteMany({ where: { locationId: location.id } }),
+      prisma.conversation.deleteMany({ where: { locationId: location.id } }),
+      prisma.pipelineStage.deleteMany({ where: { locationId: location.id } }),
+      prisma.contact.deleteMany({ where: { locationId: location.id } }),
+      prisma.tag.deleteMany({ where: { locationId: location.id } }),
+      prisma.ghlUser.deleteMany({ where: { locationId: location.id } }),
+      prisma.syncJob.deleteMany({ where: { locationId: location.id } }),
+      prisma.location.update({
+        where: { id: location.id },
+        data: { ghlPitCipher: null, ghlPitAddedAt: null, syncStatus: 'pending', lastSyncedAt: null, syncingSince: null },
+      }),
+    ]);
+
+    res.json({ message: 'Location reset — every synced row deleted, GHL connection cleared.', locationId: location.id });
+  } catch (err) {
+    next(err);
+  }
+});
