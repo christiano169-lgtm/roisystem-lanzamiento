@@ -1718,6 +1718,104 @@ function TribeTagsSection() {
   );
 }
 
+interface PipelineOption {
+  ghlPipelineId: string;
+  pipelineName: string;
+}
+
+interface PipelineRoleMapping {
+  id: string;
+  ghlPipelineId: string;
+  pipelineName: string;
+  role: 'compras' | 'canceladas' | 'abandonados';
+  tier: 'general' | 'plus';
+}
+
+const ROLE_SLOT_LABEL: Record<PipelineRoleMapping['role'], string> = {
+  compras: 'Compras',
+  canceladas: 'Canceladas',
+  abandonados: 'Carritos abandonados',
+};
+
+function PipelineRoleMappingSection() {
+  const { locationId } = useOutletContext<OutletContext>();
+  const [pipelines, setPipelines] = useState<PipelineOption[]>([]);
+  const [mappings, setMappings] = useState<PipelineRoleMapping[]>([]);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  function load() {
+    apiGet<{ stages: (PipelineStageOption & { ghlPipelineId: string })[] }>(`/api/pipeline-stages?locationId=${locationId}`).then((res) => {
+      const seen = new Map<string, PipelineOption>();
+      for (const s of res.stages) seen.set(s.ghlPipelineId, { ghlPipelineId: s.ghlPipelineId, pipelineName: s.pipelineName });
+      setPipelines(Array.from(seen.values()));
+    });
+    apiGet<{ mappings: PipelineRoleMapping[] }>(`/api/launches/pipeline-mappings?locationId=${locationId}`).then((res) => setMappings(res.mappings));
+  }
+
+  useEffect(load, [locationId]);
+
+  async function assign(role: PipelineRoleMapping['role'], tier: PipelineRoleMapping['tier'], ghlPipelineId: string) {
+    const slotKey = `${role}-${tier}`;
+    setSaving(slotKey);
+    try {
+      if (!ghlPipelineId) {
+        const existing = mappings.find((m) => m.role === role && m.tier === tier);
+        if (existing) await apiDelete(`/api/launches/pipeline-mappings/${existing.id}?locationId=${locationId}`);
+      } else {
+        const pipeline = pipelines.find((p) => p.ghlPipelineId === ghlPipelineId);
+        if (!pipeline) return;
+        await apiPost('/api/launches/pipeline-mappings', { locationId, ghlPipelineId, pipelineName: pipeline.pipelineName, role, tier });
+      }
+      load();
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const slots: { role: PipelineRoleMapping['role']; tier: PipelineRoleMapping['tier'] }[] = [
+    { role: 'compras', tier: 'general' },
+    { role: 'compras', tier: 'plus' },
+    { role: 'canceladas', tier: 'general' },
+    { role: 'canceladas', tier: 'plus' },
+    { role: 'abandonados', tier: 'general' },
+    { role: 'abandonados', tier: 'plus' },
+  ];
+
+  return (
+    <SectionCard
+      title="Pipelines de venta (alternativa a Hotmart)"
+      description='Si tus ventas se manejan como pipelines de GHL en vez de Hotmart (ej. "#1 BOOTCAMP GENERAL", "#3 CANCELADAS GENERAL"), mapealos acá — "Dinero sobre la mesa" en el Panel ejecutivo va a leer de acá en vez de Hotmart. Una etapa cuyo nombre contenga "Recuperado" cuenta como recuperada; una que contenga "Ticket" cuenta como pago en efectivo pendiente.'
+    >
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {slots.map(({ role, tier }) => {
+          const current = mappings.find((m) => m.role === role && m.tier === tier);
+          const slotKey = `${role}-${tier}`;
+          return (
+            <div key={slotKey} className="flex items-center gap-3 rounded-md border border-border2 bg-card px-3.5 py-2.5">
+              <span className="w-40 shrink-0 text-[12px] font-semibold">
+                {ROLE_SLOT_LABEL[role]} <span className="text-gray-500">({tier === 'plus' ? 'Plus' : 'General'})</span>
+              </span>
+              <select
+                value={current?.ghlPipelineId ?? ''}
+                onChange={(e) => assign(role, tier, e.target.value)}
+                disabled={saving === slotKey}
+                className="flex-1 rounded border border-border2 bg-input px-2.5 py-1.5 text-[12px] outline-none focus:border-accent/60"
+              >
+                <option value="">Sin mapear</option>
+                {pipelines.map((p) => (
+                  <option key={p.ghlPipelineId} value={p.ghlPipelineId}>
+                    {p.pipelineName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
 const WIZARD_STEPS = [
   { id: 'conexion', label: 'Conexión GHL' },
   { id: 'equipo', label: 'Equipo y asesores' },
@@ -1760,6 +1858,7 @@ export default function Settings() {
             <LaunchesSection />
             <HotmartOffersSection />
             <TribeTagsSection />
+            <PipelineRoleMappingSection />
           </>
         )}
         {step === 'ia' && isAdmin && (

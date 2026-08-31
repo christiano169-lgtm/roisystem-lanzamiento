@@ -18,6 +18,7 @@ import {
   updateLaunch,
 } from './service.js';
 import { createTribeTag, deleteTribeTag, listTribeTags } from './segments.js';
+import { deletePipelineRoleMapping, listPipelineRoleMappings, setPipelineRoleMapping } from './pipelineSales.js';
 
 export const launchesRouter = Router();
 
@@ -252,6 +253,52 @@ launchesRouter.delete('/tribes/:tribeId', requireRole('admin', 'manager'), async
     await assertOwnedLocation(req.auth!.tenantId, q.locationId);
     const ok = await deleteTribeTag(q.locationId, req.params.tribeId!);
     if (!ok) return res.status(404).json({ error: 'Tribe not found' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Same location-wide scope as /tribes — see PipelineRoleMapping's schema
+// comment: for clients who track compras/canceladas/abandonados as GHL
+// Pipelines instead of Hotmart, this is where the admin says which
+// pipeline plays which role.
+launchesRouter.get('/pipeline-mappings', async (req, res, next) => {
+  try {
+    const q = listQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const mappings = await listPipelineRoleMappings(q.locationId);
+    res.json({ mappings });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const pipelineMappingSchema = z.object({
+  locationId: z.string().min(1),
+  ghlPipelineId: z.string().min(1),
+  pipelineName: z.string().min(1),
+  role: z.enum(['compras', 'canceladas', 'abandonados']),
+  tier: z.enum(['general', 'plus']),
+});
+
+launchesRouter.post('/pipeline-mappings', requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    const input = pipelineMappingSchema.parse(req.body);
+    await assertOwnedLocation(req.auth!.tenantId, input.locationId);
+    const mapping = await setPipelineRoleMapping(input.locationId, input);
+    res.status(201).json({ mapping });
+  } catch (err) {
+    next(err);
+  }
+});
+
+launchesRouter.delete('/pipeline-mappings/:mappingId', requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    const q = listQuerySchema.parse(req.query);
+    await assertOwnedLocation(req.auth!.tenantId, q.locationId);
+    const ok = await deletePipelineRoleMapping(q.locationId, req.params.mappingId!);
+    if (!ok) return res.status(404).json({ error: 'Mapping not found' });
     res.status(204).end();
   } catch (err) {
     next(err);

@@ -13,6 +13,7 @@ import {
   type SalesVolumeRow,
 } from '../../hotmart/launchSales.js';
 import { getLaunchTribeBreakdown, getLaunchCountryBreakdown, type TribeRow, type CountryRow } from './segments.js';
+import { getPipelineStatusBreakdown } from './pipelineSales.js';
 import { getSettersSummary } from '../setters/service.js';
 import type { FunnelStage } from '../../kpis/types.js';
 
@@ -279,6 +280,14 @@ export async function getLaunchSummary(
       getLaunchCountryBreakdown(locationId, from, to),
     ]);
 
+  // Prefer the GHL-Pipeline-sourced breakdown when the admin has mapped
+  // pipelines for it (Configuración → Lanzamientos → Pipelines de venta) —
+  // some clients run the whole compras/canceladas/abandonados funnel as
+  // GHL Pipelines instead of through Hotmart, and for them the
+  // Hotmart-sourced breakdown is correctly all zeros, not a bug.
+  const pipelineBreakdown = await getPipelineStatusBreakdown(locationId, from, to);
+  const finalStatusBreakdown = pipelineBreakdown ?? statusBreakdown;
+
   return {
     launch: { id: launch.id, name: launch.name, startDate: launch.startDate, endDate: launch.endDate, status: launch.status },
     phases: phases.map((p) => ({ id: p.id, label: p.label, startDate: p.startDate, endDate: p.endDate })),
@@ -293,7 +302,7 @@ export async function getLaunchSummary(
     salesKpis,
     salesVolume,
     salesRanking,
-    statusBreakdown,
+    statusBreakdown: finalStatusBreakdown,
     tribes,
     countries,
     funnel,

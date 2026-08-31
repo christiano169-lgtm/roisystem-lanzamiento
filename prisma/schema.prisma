@@ -218,6 +218,7 @@ model Location {
   hotmartSaleEvents HotmartSaleEvent[]
   hotmartOffers    HotmartOffer[]
   tribeTags        TribeTag[]
+  pipelineRoleMappings PipelineRoleMapping[]
   launches         Launch[]
   forms            Form[]
   formSubmissions  FormSubmission[]
@@ -662,6 +663,40 @@ model PipelineStage {
 
   @@unique([locationId, ghlPipelineId, ghlStageId])
   @@map("pipeline_stages")
+}
+
+enum PipelineRole {
+  compras
+  canceladas
+  abandonados
+}
+
+enum PipelineTier {
+  general
+  plus
+}
+
+// Some clients track the whole "Dinero sobre la mesa" funnel as dedicated
+// GHL Pipelines instead of (or in addition to) Hotmart — e.g. this client's
+// "#1 BOOTCAMP GENERAL" / "#2 BOOTCAMP PLUS" for purchases, "#3/#4
+// CANCELADAS ..." for cancellations, "#5/#6 CARRITOS ABANDONADOS ..." for
+// abandoned carts, each already carrying its own "Recuperado" stage. Admin
+// maps which pipeline plays which (role, tier) here (Configuración →
+// Lanzamientos → Pipelines de ventas) so getLaunchStatusBreakdown can read
+// straight from Opportunity/PipelineStage instead of requiring Hotmart.
+model PipelineRoleMapping {
+  id           String       @id @default(cuid())
+  locationId   String
+  ghlPipelineId String
+  pipelineName String
+  role         PipelineRole
+  tier         PipelineTier
+  createdAt    DateTime     @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, role, tier])
+  @@map("pipeline_role_mappings")
 }
 
 model Opportunity {
