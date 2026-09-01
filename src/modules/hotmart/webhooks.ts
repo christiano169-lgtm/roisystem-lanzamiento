@@ -43,11 +43,15 @@ const SALE_EVENTS = new Set([
   'PURCHASE_DELAYED',
 ]);
 
-// Best-effort, same caveat as the rest of this file: "CART_ABANDONMENT" is
-// Hotmart's documented webhook topic for cart abandonment, but the payload
-// shape below hasn't been confirmed against a live event yet — there's no
-// `purchase` transaction (nothing was bought), so it's read defensively and
-// logged to HotmartSaleEvent only, not HotmartSale.
+// Confirmed 2026-08-31 against this client's real Hotmart export (a Google
+// Sheet of actual webhook-driven rows): the event name is
+// PURCHASE_OUT_OF_SHOPPING_CART, not "CART_ABANDONMENT" as originally
+// guessed here — that earlier name was never fetched from a live payload
+// and was wrong. Payload field names (buyer/product) are still read
+// defensively since the exact JSON shape wasn't in that export (it was a
+// flattened sheet, not raw JSON) — there's no `purchase` transaction
+// either way (nothing was bought), so it's logged to HotmartSaleEvent
+// only, not HotmartSale.
 interface HotmartAbandonedCartPayload {
   buyer?: { email?: string; name?: string };
   product?: { id?: number; name?: string };
@@ -74,7 +78,7 @@ hotmartWebhookRouter.post('/:locationId', async (req, res) => {
 
   if (payload.event && SALE_EVENTS.has(payload.event) && payload.data) {
     await upsertHotmartSale(locationId, payload.data);
-  } else if (payload.event === 'CART_ABANDONMENT') {
+  } else if (payload.event === 'PURCHASE_OUT_OF_SHOPPING_CART') {
     const data = payload.data as HotmartAbandonedCartPayload | undefined;
     await recordSaleStatusEvent(locationId, null, data?.buyer?.email ?? null, data?.product?.name ?? null, 'ABANDONED_CART', data ?? {});
   } else {
