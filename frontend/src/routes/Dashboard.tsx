@@ -205,6 +205,7 @@ function StatusBreakdownCard({ label, bucket, color }: { label: string; bucket: 
 
 function HorizontalBarChart({ title, rows, emptyLabel }: { title: string; rows: { label: string; count: number }[]; emptyLabel: string }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
+  const total = rows.reduce((sum, r) => sum + r.count, 0);
   return (
     <div className="rounded-[7px] border border-border bg-panel p-5">
       <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</span>
@@ -217,6 +218,7 @@ function HorizontalBarChart({ title, rows, emptyLabel }: { title: string; rows: 
               <div className="roi-in h-full rounded-sm bg-gradient-to-r from-sky-500 to-accent" style={{ width: `${(r.count / max) * 100}%` }} />
             </div>
             <span className="w-10 shrink-0 text-right text-[12px] font-semibold text-gray-300">{formatNumber(r.count)}</span>
+            <span className="w-12 shrink-0 text-right text-[11px] text-gray-500">{total > 0 ? `${((r.count / total) * 100).toFixed(1)}%` : '—'}</span>
           </div>
         ))}
       </div>
