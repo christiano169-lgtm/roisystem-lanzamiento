@@ -13,7 +13,7 @@ import {
   type SalesVolumeRow,
 } from '../../hotmart/launchSales.js';
 import { getLaunchTribeBreakdown, getLaunchCountryBreakdown, type TribeRow, type CountryRow } from './segments.js';
-import { getPipelineStatusBreakdown } from './pipelineSales.js';
+import { getPipelineStatusBreakdown, getPipelineSalesKpis, getPipelineSalesRanking } from './pipelineSales.js';
 import { getSettersSummary } from '../setters/service.js';
 import type { FunnelStage } from '../../kpis/types.js';
 
@@ -285,8 +285,14 @@ export async function getLaunchSummary(
   // some clients run the whole compras/canceladas/abandonados funnel as
   // GHL Pipelines instead of through Hotmart, and for them the
   // Hotmart-sourced breakdown is correctly all zeros, not a bug.
-  const pipelineBreakdown = await getPipelineStatusBreakdown(locationId, from, to);
+  const [pipelineBreakdown, pipelineSalesKpis, pipelineSalesRanking] = await Promise.all([
+    getPipelineStatusBreakdown(locationId, from, to),
+    getPipelineSalesKpis(locationId, from, to),
+    getPipelineSalesRanking(locationId, from, to),
+  ]);
   const finalStatusBreakdown = pipelineBreakdown ?? statusBreakdown;
+  const finalSalesKpis = pipelineSalesKpis ?? salesKpis;
+  const finalSalesRanking = pipelineSalesRanking ?? salesRanking;
 
   return {
     launch: { id: launch.id, name: launch.name, startDate: launch.startDate, endDate: launch.endDate, status: launch.status },
@@ -299,9 +305,9 @@ export async function getLaunchSummary(
       hotmart,
     },
     embudoVentas: { cerrada: operational.wonCount, ofertada: operational.ofertadaCount, noOfertada: operational.noOfertadaCount },
-    salesKpis,
+    salesKpis: finalSalesKpis,
     salesVolume,
-    salesRanking,
+    salesRanking: finalSalesRanking,
     statusBreakdown: finalStatusBreakdown,
     tribes,
     countries,
